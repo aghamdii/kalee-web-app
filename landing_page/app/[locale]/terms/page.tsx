@@ -31,7 +31,7 @@ export default async function Terms({
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl font-bold mb-8 text-foreground">Terms & Conditions</h1>
-          <p className="text-gray-600 mb-8">Last updated: January 2025</p>
+          <p className="text-gray-600 mb-8">Last updated: August 2025</p>
 
           <div className="prose prose-lg max-w-none">
             <section className="mb-8">
@@ -147,7 +147,6 @@ export default async function Terms({
               </p>
               <ul className="list-disc pl-6 text-gray-700 space-y-2 mb-4">
                 <li>Your personal information and meal data will be removed as described in our Privacy Policy</li>
-                <li>Food images are already automatically deleted within 24 hours of processing</li>
                 <li>Some anonymized data may be retained for service improvement purposes</li>
               </ul>
               <p className="text-gray-700 leading-relaxed mb-4">
@@ -217,7 +216,7 @@ export default async function Terms({
                 The Service Provider may periodically update these Terms and Conditions. You will be notified of any material changes through the Application or via email. Continued use of the Application after such modifications constitutes acceptance of the updated Terms.
               </p>
               <p className="text-gray-700 leading-relaxed mb-4">
-                These terms and conditions are effective as of January 15, 2025.
+                These terms and conditions are effective as of August 15, 2025.
               </p>
             </section>
 

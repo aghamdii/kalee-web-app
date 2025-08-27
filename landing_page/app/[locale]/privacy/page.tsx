@@ -31,7 +31,7 @@ export default async function Privacy({
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl font-bold mb-8 text-foreground">Privacy Policy</h1>
-          <p className="text-gray-600 mb-8">Last updated: January 15, 2025</p>
+          <p className="text-gray-600 mb-8">Last updated: August 25, 2025</p>
 
           <div className="prose prose-lg max-w-none">
             <section className="mb-8">
@@ -81,10 +81,6 @@ export default async function Privacy({
                   <li>Diagnostic data: App performance metrics and crash reports to improve stability</li>
                 </ul>
               </div>
-
-              <p className="text-gray-700 leading-relaxed">
-                Kalee does not gather precise information about the location of your mobile device unless you explicitly grant location permissions for features like nearby restaurant recommendations.
-              </p>
             </section>
 
             <section className="mb-8">
@@ -147,7 +143,6 @@ export default async function Privacy({
               <ul className="list-disc pl-6 text-gray-700 space-y-2 mb-4">
                 <li><strong>Secure processing:</strong> Images are processed on encrypted servers using Google's Gemini AI</li>
                 <li><strong>Encrypted storage:</strong> Food images are stored securely with industry-standard encryption</li>
-                <li><strong>Data encryption:</strong> All transmitted data is encrypted in transit and at rest</li>
                 <li><strong>Limited access:</strong> Only authorized systems and you have access to your food images</li>
                 <li><strong>User control:</strong> Images are retained for your meal history and can be deleted when you delete meals or your account</li>
               </ul>
@@ -171,6 +166,7 @@ export default async function Privacy({
                 <li><a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener noreferrer" className="text-kalee-secondary hover:underline">Google Analytics for Firebase</a></li>
                 <li><a href="https://firebase.google.com/support/privacy/" target="_blank" rel="noopener noreferrer" className="text-kalee-secondary hover:underline">Firebase Crashlytics</a></li>
                 <li><a href="https://ai.google.dev/privacy" target="_blank" rel="noopener noreferrer" className="text-kalee-secondary hover:underline">Google AI/Gemini API</a></li>
+                <li><a href="https://amplitude.com" target="_blank" rel="noopener noreferrer" className="text-kalee-secondary hover:underline">Amplitude SDK</a></li>
               </ul>
 
               <p className="text-gray-700 leading-relaxed mb-4">
@@ -329,7 +325,7 @@ export default async function Privacy({
                 This Privacy Policy may be updated from time to time for any reason. We will notify you of any changes to the Privacy Policy by updating this page with the new Privacy Policy and through Kalee when appropriate. You are advised to consult this Privacy Policy regularly for any changes, as continued use is deemed approval of all changes.
               </p>
               <p className="text-gray-700 leading-relaxed">
-                This privacy policy is effective as of January 15, 2025.
+                This privacy policy is effective as of August 25, 2025.
               </p>
             </section>
 
