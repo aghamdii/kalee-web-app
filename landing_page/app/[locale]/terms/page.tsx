@@ -84,7 +84,7 @@ export default async function Terms({
                 Subscription options may include:
               </p>
               <ul className="list-disc pl-6 text-gray-700 space-y-2 mb-4">
-                <li>Monthly subscription: Pricing as displayed in the app store</li>
+                <li>Weekly subscription: Pricing as displayed in the app store</li>
                 <li>Annual subscription: Pricing as displayed in the app store</li>
               </ul>
               <p className="text-gray-700 leading-relaxed mb-4">
@@ -110,9 +110,6 @@ export default async function Terms({
               </ul>
               <p className="text-gray-700 leading-relaxed mb-4">
                 Accuracy depends on factors including photo quality, lighting conditions, food visibility, and the complexity of the meal. Users should review and correct AI-generated results as needed.
-              </p>
-              <p className="text-gray-700 leading-relaxed mb-4">
-                <strong>Food images are automatically deleted within 24 hours after AI processing</strong> to protect your privacy, while nutritional data is retained for tracking purposes.
               </p>
             </section>
 
