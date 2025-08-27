@@ -88,15 +88,13 @@ export class FoodUtils {
     }
 
     // Input validation utilities
-    static validateFoodImageRequest(data: any): { isValid: boolean; errors: string[] } {
+
+    // New validation function for unified functions (no userId required - uses Firebase Auth instead)
+    static validateUnifiedAnalysisRequest(data: any): { isValid: boolean; errors: string[] } {
         const errors: string[] = [];
         
-        if (!data.imagePath || typeof data.imagePath !== 'string') {
-            errors.push('imagePath is required and must be a string');
-        }
-        
-        if (!data.userId || typeof data.userId !== 'string') {
-            errors.push('userId is required and must be a string');
+        if (!data.storagePath || typeof data.storagePath !== 'string') {
+            errors.push('storagePath is required and must be a string');
         }
         
         if (data.language && typeof data.language !== 'string') {
@@ -107,50 +105,20 @@ export class FoodUtils {
             errors.push('unitSystem must be either "metric" or "imperial"');
         }
         
+        if (data.notes && typeof data.notes !== 'string') {
+            errors.push('notes must be a string');
+        }
+        
+        if (data.notes && data.notes.length > 200) {
+            errors.push('notes must be 200 characters or less');
+        }
+        
         return {
             isValid: errors.length === 0,
             errors
         };
     }
 
-    static validateNutritionRequest(data: any): { isValid: boolean; errors: string[] } {
-        const errors: string[] = [];
-        
-        if (!data.sessionId || typeof data.sessionId !== 'string') {
-            errors.push('sessionId is required and must be a string');
-        }
-        
-        if (!data.mealName || typeof data.mealName !== 'string') {
-            errors.push('mealName is required and must be a string');
-        }
-        
-        if (!data.ingredients || !Array.isArray(data.ingredients) || data.ingredients.length === 0) {
-            errors.push('ingredients is required and must be a non-empty array');
-        }
-        
-        if (data.ingredients) {
-            data.ingredients.forEach((ingredient: any, index: number) => {
-                if (!ingredient.name || typeof ingredient.name !== 'string') {
-                    errors.push(`ingredients[${index}].name is required and must be a string`);
-                }
-                if (typeof ingredient.quantity !== 'number' || ingredient.quantity <= 0) {
-                    errors.push(`ingredients[${index}].quantity is required and must be a positive number`);
-                }
-                if (!ingredient.unit || typeof ingredient.unit !== 'string') {
-                    errors.push(`ingredients[${index}].unit is required and must be a string`);
-                }
-            });
-        }
-        
-        if (data.language && typeof data.language !== 'string') {
-            errors.push('language must be a string');
-        }
-        
-        return {
-            isValid: errors.length === 0,
-            errors
-        };
-    }
 
     // Error response helpers
     static createErrorResponse(code: string, message: string, sessionId?: string, language: string = 'en') {

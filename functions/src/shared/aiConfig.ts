@@ -1,22 +1,21 @@
 export class FoodAiConfig {
-    // Model Configuration - Using latest Gemini models for food analysis
-    static readonly VISION_MODEL = 'gemini-2.0-flash-exp'; // For image analysis
-    static readonly TEXT_MODEL = 'gemini-2.5-flash'; // For nutrition analysis
-    static readonly DEFAULT_TEMPERATURE = 0.15; // Lower temperature for more consistent nutrition data
-    static readonly DEFAULT_MAX_TOKENS = 16000;
+    // Model Configuration - Using same model as Flaia functions
+    static readonly DEFAULT_MODEL = 'gemini-2.5-flash'; // Same as Flaia
+    static readonly DEFAULT_TEMPERATURE = 0.25; // Same as Flaia  
+    static readonly DEFAULT_MAX_TOKENS = 24000; // Same as Flaia
 
-    // Base Generation Configuration for @google/genai
+    // Base Generation Configuration for @google/genai - Same as Flaia
     static readonly BASE_GENERATION_CONFIG = {
         temperature: FoodAiConfig.DEFAULT_TEMPERATURE,
         maxOutputTokens: FoodAiConfig.DEFAULT_MAX_TOKENS,
         responseMimeType: 'application/json',
         thinkingConfig: {
-            includeThoughts: false,
-            thinkingBudget: 0,
+            includeThoughts: true,
+            thinkingBudget: 1250,
         },
     };
 
-    // Get generation config with schema
+    // Get generation config with schema - Same approach as Flaia
     static getGenerationConfigWithSchema(responseSchema: any) {
         return {
             ...FoodAiConfig.BASE_GENERATION_CONFIG,

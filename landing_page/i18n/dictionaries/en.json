@@ -1,0 +1,104 @@
+{
+  "nav": {
+    "features": "Features",
+    "howItWorks": "How it works",
+    "support": "Support",
+    "terms": "Terms",
+    "privacy": "Privacy"
+  },
+  "hero": {
+    "title": "Track calories with",
+    "titleHighlight": "just a photo",
+    "description": "Set your macro goals during onboarding, then track meals effortlessly with AI or manual entry. Monitor your progress with detailed analytics.",
+    "cta": "Download the App"
+  },
+  "benefits": {
+    "easyTracking": {
+      "title": "Easy Tracking",
+      "description": "Log meals in seconds with AI or manual entry"
+    },
+    "dailyReminders": {
+      "title": "Daily Reminders",
+      "description": "Build healthy habits with smart notifications"
+    },
+    "visualProgress": {
+      "title": "Visual Progress",
+      "description": "See your daily achievements and trends"
+    }
+  },
+  "features": {
+    "title": "Simple. Smart. Accurate.",
+    "subtitle": "Everything you need for effortless nutrition tracking",
+    "aiTracking": {
+      "title": "AI-Powered Tracking",
+      "description": "Snap a photo, describe your meal, or add manually. Our AI analyzes everything for accurate nutrition data."
+    },
+    "personalizedGoals": {
+      "title": "Personalized Goals",
+      "description": "Set your daily macro targets during onboarding and track your progress toward your health goals."
+    },
+    "progressAnalytics": {
+      "title": "Progress Analytics",
+      "description": "View daily averages, weight progress, and comprehensive meal history with powerful filtering options."
+    }
+  },
+  "trackingMethods": {
+    "title": "Three Ways to Track",
+    "subtitle": "Choose the method that works best for you",
+    "camera": {
+      "title": "Camera Recognition",
+      "description": "Snap a photo of your meal and let AI do the work instantly"
+    },
+    "text": {
+      "title": "Text Description",
+      "description": "Describe your meal in words and AI will analyze nutrition"
+    },
+    "manual": {
+      "title": "Manual Entry",
+      "description": "Traditional logging with our extensive food database"
+    }
+  },
+  "howItWorks": {
+    "title": "Your journey starts here",
+    "subtitle": "From setup to success in just a few simple steps",
+    "step1": {
+      "title": "Complete onboarding",
+      "description": "Set your personal macro goals and preferences to get personalized recommendations"
+    },
+    "step2": {
+      "title": "Track your meals",
+      "description": "Use AI with camera, describe meals in text, or add manually - whatever works for you"
+    },
+    "step3": {
+      "title": "Monitor progress",
+      "description": "View daily averages, weight trends, and search your meal history to stay on track"
+    }
+  },
+  "cta": {
+    "title": "Start your health journey today",
+    "subtitle": "Join thousands who've simplified their nutrition tracking with Kalee",
+    "button": "Download the App"
+  },
+  "footer": {
+    "copyright": "© 2025 Kalee. All rights reserved.",
+    "backToHome": "Back to Home"
+  },
+  "support": {
+    "title": "How can we help you?",
+    "subtitle": "Find answers to common questions about Kalee nutrition tracking",
+    "faqTitle": "Frequently Asked Questions",
+    "tipsTitle": "Tips for Better AI Recognition",
+    "contactTitle": "Get in Touch",
+    "contactDescription": "If you can't find an answer in our FAQs, or if you need further assistance with your nutrition tracking, please don't hesitate to reach out.",
+    "appSupport": "App Support Email",
+    "developerInfo": "Developer Information",
+    "email": "Email",
+    "twitter": "X (Twitter)"
+  },
+  "macros": {
+    "calories": "Calories",
+    "protein": "Protein",
+    "carbs": "Carbs",
+    "fat": "Fat"
+  }
+}

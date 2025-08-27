@@ -16,28 +16,35 @@
 
 The Kalee AI Food Detection system provides three Firebase Cloud Functions that work together to analyze food images and calculate nutrition information.
 
+**AI Model**: Uses `gemini-2.5-flash` (same as Flaia functions) with structured JSON output for guaranteed response format.
+
 ### **Authentication**
+
 All functions require Firebase Authentication. Include the user's Firebase Auth token in requests.
 
 ### **Base Configuration**
+
 - **Region**: `europe-west1`
 - **Endpoint**: `https://europe-west1-[PROJECT_ID].cloudfunctions.net/`
 - **Content-Type**: `application/json`
+- **AI Model**: `gemini-2.5-flash`
+- **SDK Version**: `@google/genai ^1.5.0`
 
 ---
 
 ## Function 1: analyzeFoodImageFunction
 
 ### **Purpose**
+
 Analyzes a food image to identify the meal name and ingredients with estimated portions.
 
 ### **Request Format**
 
 ```typescript
 interface AnalyzeFoodImageRequest {
-  storagePath: string;        // Firebase Storage path to the uploaded image
-  language?: string;          // Language code for response (default: 'en')
-  unitSystem?: string;        // 'metric' or 'imperial' (default: 'metric')
+  storagePath: string; // Firebase Storage path to the uploaded image
+  language?: string; // Language code for response (default: 'en')
+  unitSystem?: string; // 'metric' or 'imperial' (default: 'metric')
 }
 ```
 
@@ -55,20 +62,22 @@ interface AnalyzeFoodImageRequest {
 
 ```typescript
 interface AnalyzeFoodImageResponse {
-  sessionId: string;          // Unique session ID for Phase 2
-  mealName: string;           // Identified meal name in requested language
-  confidence: number;         // Overall confidence score (0-1)
+  sessionId: string; // Unique session ID for Phase 2
+  mealName: string; // Identified meal name in requested language
+  confidence: number; // Overall confidence score (0-1)
   ingredients: Array<{
-    name: string;             // Ingredient name in requested language
-    quantity: number;         // Estimated quantity
-    unit: string;             // Unit of measurement (g, ml, oz, cups, etc.)
-    confidence: number;       // Ingredient confidence score (0-1)
-    category: string;         // Food category (protein, vegetables, grains, etc.)
+    name: string; // Ingredient name in requested language
+    quantity: number; // Estimated quantity
+    unit: string; // Unit of measurement (g, ml, oz, cups, etc.)
+    confidence: number; // Ingredient confidence score (0-1)
+    category: string; // Food category (protein, vegetables, grains, etc.)
   }>;
-  suggestedMealType: string;  // 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  language: string;           // Language code used for response
+  suggestedMealType: string; // 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  language: string; // Language code used for response
 }
 ```
+
+f
 
 ### **Response Example**
 
@@ -103,7 +112,7 @@ interface AnalyzeFoodImageResponse {
       "name": "Olive Oil",
       "quantity": 10,
       "unit": "ml",
-      "confidence": 0.80,
+      "confidence": 0.8,
       "category": "oils"
     }
   ],
@@ -117,23 +126,25 @@ interface AnalyzeFoodImageResponse {
 ## Function 2: analyzeNutritionFunction
 
 ### **Purpose**
+
 Calculates detailed nutrition information based on the user-reviewed ingredients from Phase 1.
 
 ### **Request Format**
 
 ```typescript
 interface AnalyzeNutritionRequest {
-  sessionId: string;          // Session ID from Phase 1
-  mealName: string;           // Final meal name (user can edit)
-  ingredients: Array<{        // User-reviewed ingredients
-    name: string;             // Ingredient name
-    quantity: number;         // Quantity per serving
-    unit: string;             // Unit of measurement
-    servingAmount: number;    // How many servings eaten (e.g., 1.5)
+  sessionId: string; // Session ID from Phase 1
+  mealName: string; // Final meal name (user can edit)
+  ingredients: Array<{
+    // User-reviewed ingredients
+    name: string; // Ingredient name
+    quantity: number; // Quantity per serving
+    unit: string; // Unit of measurement
+    servingAmount: number; // How many servings eaten (e.g., 1.5)
   }>;
-  additionalInfo?: string;    // Optional cooking/preparation notes
+  additionalInfo?: string; // Optional cooking/preparation notes
   dietaryRestrictions?: string[]; // Optional dietary restrictions
-  language?: string;          // Language code for response (default: 'en')
+  language?: string; // Language code for response (default: 'en')
 }
 ```
 
@@ -179,26 +190,26 @@ interface AnalyzeNutritionRequest {
 
 ```typescript
 interface AnalyzeNutritionResponse {
-  sessionId: string;          // Session ID linking to Phase 1
+  sessionId: string; // Session ID linking to Phase 1
   nutrition: {
-    calories: number;         // Total calories (kcal)
-    protein: number;          // Total protein (g)
-    carbohydrates: number;    // Total carbohydrates (g)
-    fat: number;              // Total fat (g)
+    calories: number; // Total calories (kcal)
+    protein: number; // Total protein (g)
+    carbohydrates: number; // Total carbohydrates (g)
+    fat: number; // Total fat (g)
   };
-  confidence: number;         // Overall nutrition confidence (0-1)
-  portionAccuracy: number;    // Portion estimation confidence (0-1)
-  calculationMethod: string;  // Brief explanation of calculation method
+  confidence: number; // Overall nutrition confidence (0-1)
+  portionAccuracy: number; // Portion estimation confidence (0-1)
+  calculationMethod: string; // Brief explanation of calculation method
   ingredientBreakdown: Array<{
-    name: string;             // Ingredient name
-    quantity: number;         // Final quantity used in calculation
-    unit: string;             // Unit of measurement
-    calories: number;         // Calories from this ingredient
-    protein: number;          // Protein from this ingredient (g)
-    carbohydrates: number;    // Carbs from this ingredient (g)
-    fat: number;              // Fat from this ingredient (g)
+    name: string; // Ingredient name
+    quantity: number; // Final quantity used in calculation
+    unit: string; // Unit of measurement
+    calories: number; // Calories from this ingredient
+    protein: number; // Protein from this ingredient (g)
+    carbohydrates: number; // Carbs from this ingredient (g)
+    fat: number; // Fat from this ingredient (g)
   }>;
-  language: string;           // Language code used for response
+  language: string; // Language code used for response
 }
 ```
 
@@ -263,31 +274,34 @@ interface AnalyzeNutritionResponse {
 ## Function 3: saveMealEntryFunction
 
 ### **Purpose**
+
 Saves the final meal entry to the user's meal database with tags and search keywords.
 
 ### **Request Format**
 
 ```typescript
 interface SaveMealEntryRequest {
-  sessionId?: string;         // Optional session ID from previous phases
-  mealName: string;           // Final meal name
-  mealType: string;           // 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  ingredients: Array<{        // Final ingredients list
+  sessionId?: string; // Optional session ID from previous phases
+  mealName: string; // Final meal name
+  mealType: string; // 'breakfast' | 'lunch' | 'dinner' | 'snack'
+  ingredients: Array<{
+    // Final ingredients list
     name: string;
     quantity: number;
     unit: string;
     servingAmount: number;
   }>;
-  nutrition: {                // Nutrition information from Phase 2
+  nutrition: {
+    // Nutrition information from Phase 2
     calories: number;
     protein: number;
     carbohydrates: number;
     fat: number;
   };
-  confidence: number;         // AI confidence score from Phase 2
-  notes?: string;             // Optional user notes
-  storagePath: string;        // Firebase Storage path to image
-  timestamp?: string;         // Optional meal timestamp (ISO string, defaults to now)
+  confidence: number; // AI confidence score from Phase 2
+  notes?: string; // Optional user notes
+  storagePath: string; // Firebase Storage path to image
+  timestamp?: string; // Optional meal timestamp (ISO string, defaults to now)
 }
 ```
 
@@ -341,19 +355,19 @@ interface SaveMealEntryRequest {
 
 ```typescript
 interface SaveMealEntryResponse {
-  success: boolean;           // Whether save was successful
-  mealId: string;             // Unique ID of saved meal
+  success: boolean; // Whether save was successful
+  mealId: string; // Unique ID of saved meal
   data: {
-    id: string;               // Same as mealId
-    mealName: string;         // Saved meal name
-    mealType: string;         // Saved meal type
-    totalCalories: number;    // Total calories saved
-    timestamp: string;        // ISO timestamp of when meal was eaten
-    tags: string[];           // Auto-generated tags for categorization
+    id: string; // Same as mealId
+    mealName: string; // Saved meal name
+    mealType: string; // Saved meal type
+    totalCalories: number; // Total calories saved
+    timestamp: string; // ISO timestamp of when meal was eaten
+    tags: string[]; // Auto-generated tags for categorization
   };
   metadata: {
-    processingTime: number;   // Time taken to save (ms)
-    saved: boolean;           // Confirmation that save completed
+    processingTime: number; // Time taken to save (ms)
+    saved: boolean; // Confirmation that save completed
   };
 }
 ```
@@ -388,26 +402,26 @@ All functions return structured error responses when something goes wrong:
 ```typescript
 interface ErrorResponse {
   error: {
-    code: string;             // Error code for client handling
-    message: string;          // Human-readable error message (localized)
-    details?: string;         // Additional technical details
+    code: string; // Error code for client handling
+    message: string; // Human-readable error message (localized)
+    details?: string; // Additional technical details
   };
-  sessionId?: string;         // Session ID if available
-  language?: string;          // Language used for error messages
+  sessionId?: string; // Session ID if available
+  language?: string; // Language used for error messages
 }
 ```
 
 ### **Common Error Codes**
 
-| Code | Description | Retry Suggested |
-|------|-------------|-----------------|
-| `image_analysis_failed` | AI couldn't analyze the image | Yes |
-| `nutrition_calculation_failed` | AI couldn't calculate nutrition | Yes |
-| `invalid_session` | Session not found or expired | No |
-| `image_quality_poor` | Image quality too poor | No |
-| `invalid_argument` | Request validation failed | No |
-| `unauthenticated` | User not authenticated | No |
-| `save_failed` | Failed to save meal entry | Yes |
+| Code                           | Description                     | Retry Suggested |
+| ------------------------------ | ------------------------------- | --------------- |
+| `image_analysis_failed`        | AI couldn't analyze the image   | Yes             |
+| `nutrition_calculation_failed` | AI couldn't calculate nutrition | Yes             |
+| `invalid_session`              | Session not found or expired    | No              |
+| `image_quality_poor`           | Image quality too poor          | No              |
+| `invalid_argument`             | Request validation failed       | No              |
+| `unauthenticated`              | User not authenticated          | No              |
+| `save_failed`                  | Failed to save meal entry       | Yes             |
 
 ### **Error Response Example**
 
@@ -430,6 +444,7 @@ interface ErrorResponse {
 ### **Phase 1: Breakfast Example (Arabic Response)**
 
 **Request:**
+
 ```json
 {
   "storagePath": "food_images/user_456/breakfast_1701234567890.jpg",
@@ -439,6 +454,7 @@ interface ErrorResponse {
 ```
 
 **Response:**
+
 ```json
 {
   "sessionId": "food_1701234567890_breakfast456",
@@ -449,7 +465,7 @@ interface ErrorResponse {
       "name": "فول مدمس",
       "quantity": 200,
       "unit": "g",
-      "confidence": 0.90,
+      "confidence": 0.9,
       "category": "legumes"
     },
     {
@@ -470,7 +486,7 @@ interface ErrorResponse {
       "name": "زيت زيتون",
       "quantity": 15,
       "unit": "ml",
-      "confidence": 0.80,
+      "confidence": 0.8,
       "category": "oils"
     }
   ],
@@ -482,6 +498,7 @@ interface ErrorResponse {
 ### **Phase 2: Dinner Example (Spanish Response)**
 
 **Request:**
+
 ```json
 {
   "sessionId": "food_1701234567890_dinner789",
@@ -518,6 +535,7 @@ interface ErrorResponse {
 ```
 
 **Response:**
+
 ```json
 {
   "sessionId": "food_1701234567890_dinner789",
@@ -575,6 +593,7 @@ interface ErrorResponse {
 ### **Phase 3: Snack Example (Imperial Units)**
 
 **Request:**
+
 ```json
 {
   "sessionId": "food_1701234567890_snack123",
@@ -608,6 +627,7 @@ interface ErrorResponse {
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -630,6 +650,7 @@ interface ErrorResponse {
 ### **Complex Meal Example: Mixed Language (French)**
 
 **Phase 1 Request:**
+
 ```json
 {
   "storagePath": "food_images/user_321/complex_meal_1701234567890.jpg",
@@ -639,6 +660,7 @@ interface ErrorResponse {
 ```
 
 **Phase 1 Response:**
+
 ```json
 {
   "sessionId": "food_1701234567890_complex321",
@@ -677,7 +699,7 @@ interface ErrorResponse {
       "name": "Sauce César",
       "quantity": 30,
       "unit": "ml",
-      "confidence": 0.80,
+      "confidence": 0.8,
       "category": "oils"
     }
   ],
@@ -695,7 +717,7 @@ interface ErrorResponse {
 ```dart
 class FoodAnalysisService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
-  
+
   // Phase 1: Analyze Image
   Future<Map<String, dynamic>> analyzeImage({
     required String storagePath,
@@ -710,13 +732,13 @@ class FoodAnalysisService {
         'language': language,
         'unitSystem': unitSystem,
       });
-      
+
       return result.data as Map<String, dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
   }
-  
+
   // Phase 2: Analyze Nutrition
   Future<Map<String, dynamic>> analyzeNutrition({
     required String sessionId,
@@ -737,13 +759,13 @@ class FoodAnalysisService {
         'dietaryRestrictions': dietaryRestrictions ?? [],
         'language': language,
       });
-      
+
       return result.data as Map<String, dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
   }
-  
+
   // Phase 3: Save Meal
   Future<Map<String, dynamic>> saveMeal({
     String? sessionId,
@@ -770,13 +792,13 @@ class FoodAnalysisService {
         'storagePath': storagePath,
         'timestamp': timestamp?.toIso8601String(),
       });
-      
+
       return result.data as Map<String, dynamic>;
     } catch (e) {
       throw _handleError(e);
     }
   }
-  
+
   Exception _handleError(dynamic error) {
     if (error is FirebaseFunctionsException) {
       final details = error.details as Map<String, dynamic>?;
@@ -790,34 +812,40 @@ class FoodAnalysisService {
 ### **JavaScript/Web Integration**
 
 ```javascript
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 class FoodAnalysisService {
   constructor() {
     this.functions = getFunctions();
   }
-  
+
   // Phase 1: Analyze Image
-  async analyzeImage(storagePath, language = 'en', unitSystem = 'metric') {
-    const analyzeFoodImage = httpsCallable(this.functions, 'analyzeFoodImageFunction');
-    
+  async analyzeImage(storagePath, language = "en", unitSystem = "metric") {
+    const analyzeFoodImage = httpsCallable(
+      this.functions,
+      "analyzeFoodImageFunction"
+    );
+
     try {
       const result = await analyzeFoodImage({
         storagePath,
         language,
-        unitSystem
+        unitSystem,
       });
-      
+
       return result.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
-  
+
   // Phase 2: Analyze Nutrition
   async analyzeNutrition(data) {
-    const analyzeNutrition = httpsCallable(this.functions, 'analyzeNutritionFunction');
-    
+    const analyzeNutrition = httpsCallable(
+      this.functions,
+      "analyzeNutritionFunction"
+    );
+
     try {
       const result = await analyzeNutrition(data);
       return result.data;
@@ -825,11 +853,11 @@ class FoodAnalysisService {
       throw this.handleError(error);
     }
   }
-  
+
   // Phase 3: Save Meal
   async saveMeal(data) {
-    const saveMeal = httpsCallable(this.functions, 'saveMealEntryFunction');
-    
+    const saveMeal = httpsCallable(this.functions, "saveMealEntryFunction");
+
     try {
       const result = await saveMeal(data);
       return result.data;
@@ -837,7 +865,7 @@ class FoodAnalysisService {
       throw this.handleError(error);
     }
   }
-  
+
   handleError(error) {
     const errorData = error.details?.error || {};
     return new Error(errorData.message || error.message);

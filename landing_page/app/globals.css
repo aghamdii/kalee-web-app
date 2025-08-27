@@ -3,24 +3,64 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --kalee-primary: #16A34A;
+  --kalee-secondary: #0EA5E9;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-kalee-primary: var(--kalee-primary);
+  --color-kalee-secondary: var(--kalee-secondary);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  
+  /* Pixelated image rendering */
+  --image-rendering: pixelated;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Pixelated image rendering for icons */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Hover animations */
+.hover-lift {
+  transition: transform 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+
+/* Gradient backgrounds */
+.gradient-primary {
+  background: linear-gradient(135deg, var(--kalee-primary), var(--kalee-secondary));
+}
+
+/* RTL Support */
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="rtl"] .rtl\:space-x-reverse > * + * {
+  margin-right: 0.5rem;
+  margin-left: 0;
+}
+
+/* RTL specific animations */
+[dir="rtl"] .hover\:-translate-y-1:hover {
+  transform: translateY(-0.25rem);
+}
+
+[dir="rtl"] .hover\:scale-105:hover {
+  transform: scaleX(-1.05) scaleY(1.05);
 }
