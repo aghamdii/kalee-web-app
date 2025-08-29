@@ -9,8 +9,8 @@ export async function GET(request) {
     const userAgent = request.headers.get('user-agent') || '';
 
     // Your existing app store URLs
-    const appStoreUrl = "https://apps.apple.com/app/id6746681638";
-    const googlePlayUrl = "https://play.google.com/store/apps/details?id=com.aghamdii.flaia_app";
+    const appStoreUrl = "https://apps.apple.com/app/id6751262332";
+    const googlePlayUrl = "https://play.google.com/store/apps/details?id=com.aghamdii.kalee";
 
     // Same device detection logic as your button
     const isAndroidDevice = userAgent.toLowerCase().includes('android');
