@@ -7,8 +7,9 @@
  * UNIFIED SYSTEM:
  * - Single-phase analysis with complete nutrition data in one call
  * - Food validity detection to prevent non-food analysis
- * - Support for both meal photos and nutrition labels
+ * - Support for meal photos, nutrition labels, and product label scanning
  * - Comprehensive nutrition analysis with confidence scoring
+ * - Advanced product analysis with ingredient detection and health ratings
  *
  * ONBOARDING NOTIFICATIONS:
  * - Automated 3-day onboarding flow (Day 1, 2, 3 at 24h, 48h, 72h intervals)
@@ -20,6 +21,7 @@
 export { analyzeMealImageFunction } from './food/analyzeMealImage';
 export { analyzeLabelImageFunction } from './food/analyzeLabelImage';
 export { analyzeMealTextFunction } from './food/analyzeMealText';
+export { analyzeProductFunction } from './food/analyzeProduct';
 
 // NOTIFICATION FUNCTIONS
 export { scheduleOnboardingNotifications } from './notifications/scheduleOnboarding';

@@ -2,7 +2,7 @@ import * as admin from 'firebase-admin';
 
 export interface FoodPromptLogData {
     user_id: string;
-    prompt_type: 'unified_meal_analysis' | 'unified_label_analysis' | 'text_meal_analysis';
+    prompt_type: 'unified_meal_analysis' | 'unified_label_analysis' | 'text_meal_analysis' | 'product_analysis';
     session_id?: string; // Session identifier for tracking
     user_request: string; // JSON string of user request (for easy copy/paste)
     prompt_text: string; // The actual prompt sent to LLM
@@ -141,7 +141,7 @@ export function extractFoodAiConfig(model: string, config: any) {
  */
 export function logFoodPromptAsync(data: {
     user_id: string;
-    prompt_type: 'unified_meal_analysis' | 'unified_label_analysis' | 'text_meal_analysis';
+    prompt_type: 'unified_meal_analysis' | 'unified_label_analysis' | 'text_meal_analysis' | 'product_analysis';
     session_id?: string;
     user_request: any; // Will be converted to JSON string
     prompt_text: string;

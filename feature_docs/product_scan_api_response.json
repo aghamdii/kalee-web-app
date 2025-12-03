@@ -1,0 +1,123 @@
+{
+  "productInfo": {
+    "name": "Strawberry Milk Drink"
+  },
+  
+  "servingInfo": {
+    "servingSize": 240.0,
+    "servingUnit": "ml",
+    "servingsPerContainer": 2.5,
+    "hasMultipleServings": true
+  },
+  
+  "nutritionPerServing": {
+    "calories": {
+      "value": 170.0,
+      "isFromLabel": true,
+      "healthRating": "FAIR"
+    },
+    "protein": {
+      "value": 6.0,
+      "isFromLabel": true,
+      "healthRating": "GOOD"
+    },
+    "carbs": {
+      "value": 32.0,
+      "isFromLabel": true,
+      "healthRating": "FAIR"
+    },
+    "fat": {
+      "value": 2.5,
+      "isFromLabel": true,
+      "healthRating": "EXCELLENT"
+    },
+    "sugar": {
+      "value": 1.0,
+      "isFromLabel": true,
+      "healthRating": "EXCELLENT"
+    },
+    "sodium": {
+      "value": 13.0,
+      "isFromLabel": true,
+      "healthRating": "EXCELLENT"
+    },
+    "fiber": {
+      "value": 3.0,
+      "isFromLabel": false,
+      "healthRating": "GOOD"
+    },
+    "cholesterol": {
+      "value": 0.0,
+      "isFromLabel": true,
+      "healthRating": "EXCELLENT"
+    }
+  },
+  
+  "ingredients": [
+    {
+      "name": "Milk",
+      "category": "NATURAL",
+      "eNumber": null,
+      "isHighlighted": false
+    },
+    {
+      "name": "Water",
+      "category": "NATURAL",
+      "eNumber": null,
+      "isHighlighted": false
+    },
+    {
+      "name": "Sugar",
+      "category": "NATURAL",
+      "eNumber": null,
+      "isHighlighted": false
+    },
+    {
+      "name": "Strawberry Juice",
+      "category": "NATURAL",
+      "eNumber": null,
+      "isHighlighted": false
+    },
+    {
+      "name": "Carrageenan",
+      "category": "ADDITIVE",
+      "eNumber": "E407",
+      "isHighlighted": true
+    },
+    {
+      "name": "Mono- and Diglycerides",
+      "category": "ADDITIVE",
+      "eNumber": "E471",
+      "isHighlighted": false
+    },
+    {
+      "name": "Caramel Color",
+      "category": "ADDITIVE",
+      "eNumber": "E150a",
+      "isHighlighted": false
+    },
+    {
+      "name": "Vitamin D3",
+      "category": "VITAMIN",
+      "eNumber": null,
+      "isHighlighted": false
+    },
+    {
+      "name": "Calcium Carbonate",
+      "category": "MINERAL",
+      "eNumber": null,
+      "isHighlighted": false
+    }
+  ],
+  
+  "allergens": ["DAIRY", "SOY"],
+  
+  "processingLevel": {
+    "score": 6,
+    "level": "MODERATE"
+  },
+  
+  "analysis": {
+    "confidenceScore": 92
+  }
+}
