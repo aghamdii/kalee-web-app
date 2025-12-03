@@ -67,10 +67,10 @@ export const analyzeProductFunction = onCall({
         // Convert image to base64 for AI processing
         const imageBase64 = FoodUtils.imageToBase64(imageBuffer);
 
-        // Initialize Google AI with product analysis schema
+        // Initialize Google AI with product analysis schema (fast config - no thinking)
         const genAI = new GoogleGenAI({ apiKey: apiKey.value() });
         const responseSchema = getProductAnalysisSchema();
-        const aiConfig = FoodAiConfig.getGenerationConfigWithSchema(responseSchema);
+        const aiConfig = FoodAiConfig.getFastConfigWithSchema(responseSchema);
 
         // Generate product analysis prompt
         const prompt = ProductPrompts.getProductAnalysisPrompt(validLanguage, validUnitSystem, notes);
@@ -119,9 +119,6 @@ export const analyzeProductFunction = onCall({
             }
 
             // Validate required fields
-            if (!analysisResult.productName) {
-                throw new Error('Missing required field: productName');
-            }
             if (!analysisResult.servingSize || analysisResult.servingsPerContainer === undefined) {
                 throw new Error('Missing required serving information');
             }
@@ -147,7 +144,7 @@ export const analyzeProductFunction = onCall({
                     total_calories: analysisResult.calories || 0
                 },
                 food_metadata: {
-                    meal_name: analysisResult.productName,
+                    meal_name: `Product (${analysisResult.servingSize})`,
                     language: validLanguage,
                     unit_system: validUnitSystem,
                     image_size_bytes: imageBuffer.length,
@@ -167,11 +164,9 @@ export const analyzeProductFunction = onCall({
             // Enhanced logging
             logger.info(`[${userId}] [product_analysis] [${promptLogDocId || 'NO_LOG_ID'}] Analysis completed`, {
                 sessionId,
-                productName: analysisResult.productName,
-                brand: analysisResult.brand || null,
-                calories: analysisResult.calories,
                 servingSize: analysisResult.servingSize,
                 servingsPerContainer: analysisResult.servingsPerContainer,
+                calories: analysisResult.calories,
                 confidence: analysisResult.confidenceScore,
                 language: validLanguage,
                 unitSystem: validUnitSystem,

@@ -4,64 +4,80 @@ import { Type } from "@google/genai";
 export const ProductAnalysisResponseSchema = {
     type: Type.OBJECT,
     properties: {
-        // Product Info
-        productName: {
-            type: Type.STRING,
-            description: "Product name extracted from label"
-        },
-        brand: {
-            type: Type.STRING,
-            description: "Brand name if visible on label"
-        },
-
         // Serving Information
         servingSize: {
             type: Type.STRING,
-            description: "Serving size as displayed on label (e.g., '1 cup (240ml)', '30g')"
+            description: "Serving size measurement ONLY (e.g., '27g', '240ml'). Do NOT include piece counts or descriptions."
         },
         servingsPerContainer: {
             type: Type.NUMBER,
             description: "Number of servings per container/package"
         },
 
-        // Nutrition Facts (per serving) - Required
+        // Nutrition Facts (per serving)
         calories: {
             type: Type.NUMBER,
             description: "Calories per serving (kcal)"
+        },
+        caloriesFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if calories was visible on label, false if estimated"
         },
         protein: {
             type: Type.NUMBER,
             description: "Protein in grams per serving"
         },
+        proteinFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if protein was visible on label, false if estimated"
+        },
         carbs: {
             type: Type.NUMBER,
             description: "Total carbohydrates in grams per serving"
+        },
+        carbsFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if carbs was visible on label, false if estimated"
         },
         fat: {
             type: Type.NUMBER,
             description: "Total fat in grams per serving"
         },
-
-        // Nutrition Facts (per serving) - Optional
+        fatFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if fat was visible on label, false if estimated"
+        },
         sugar: {
             type: Type.NUMBER,
             description: "Total sugars in grams per serving"
+        },
+        sugarFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if sugar was visible on label, false if estimated"
         },
         fiber: {
             type: Type.NUMBER,
             description: "Dietary fiber in grams per serving"
         },
+        fiberFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if fiber was visible on label, false if estimated"
+        },
         sodium: {
             type: Type.NUMBER,
             description: "Sodium in milligrams per serving"
         },
-        saturatedFat: {
-            type: Type.NUMBER,
-            description: "Saturated fat in grams per serving"
+        sodiumFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if sodium was visible on label, false if estimated"
         },
         cholesterol: {
             type: Type.NUMBER,
             description: "Cholesterol in milligrams per serving"
+        },
+        cholesterolFromLabel: {
+            type: Type.BOOLEAN,
+            description: "true if cholesterol was visible on label, false if estimated"
         },
 
         // AI Confidence
@@ -70,11 +86,24 @@ export const ProductAnalysisResponseSchema = {
             description: "AI confidence score (0.0 to 1.0)"
         }
     },
-    required: ["productName", "servingSize", "servingsPerContainer", "calories", "protein", "carbs", "fat", "confidenceScore"],
+    required: [
+        "servingSize", "servingsPerContainer",
+        "calories", "caloriesFromLabel",
+        "protein", "proteinFromLabel",
+        "carbs", "carbsFromLabel",
+        "fat", "fatFromLabel",
+        "confidenceScore"
+    ],
     propertyOrdering: [
-        "productName", "brand", "servingSize", "servingsPerContainer",
-        "calories", "protein", "carbs", "fat",
-        "sugar", "fiber", "sodium", "saturatedFat", "cholesterol",
+        "servingSize", "servingsPerContainer",
+        "calories", "caloriesFromLabel",
+        "protein", "proteinFromLabel",
+        "carbs", "carbsFromLabel",
+        "fat", "fatFromLabel",
+        "sugar", "sugarFromLabel",
+        "fiber", "fiberFromLabel",
+        "sodium", "sodiumFromLabel",
+        "cholesterol", "cholesterolFromLabel",
         "confidenceScore"
     ]
 };

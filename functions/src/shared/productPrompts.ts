@@ -4,7 +4,7 @@ import { FoodPrompts } from './prompts';
 export class ProductPrompts {
 
     /**
-     * Generate product label analysis prompt - matches Flutter ProductAnalysisResult
+     * Generate product label analysis prompt - extracts nutrition facts with fromLabel flags
      */
     static getProductAnalysisPrompt(language: string = 'en', unitSystem: string = 'metric', userNotes?: string): string {
         const languageInfo = FoodAiConfig.SUPPORTED_LANGUAGES[language as keyof typeof FoodAiConfig.SUPPORTED_LANGUAGES] || FoodAiConfig.SUPPORTED_LANGUAGES.en;
@@ -12,50 +12,57 @@ export class ProductPrompts {
         const contextNote = userNotes ?
             `Context: "${userNotes}" - adjust analysis accordingly.` : '';
 
-        return `Nutrition label OCR - extract product and nutrition information.
+        return `Nutrition label OCR - extract nutrition facts.
 
 Response language: ${languageInfo.nativeName} (${language})
 ${contextNote}
 
 **EXTRACT FROM LABEL**:
 
-Product Info:
-• productName: Product name from label
-• brand: Brand name if visible (optional)
-
 Serving Info:
-• servingSize: As shown on label (e.g., "1 cup (240ml)", "30g", "2 cookies (28g)")
+• servingSize: ONLY the weight/volume measurement (e.g., "27g", "240ml"). Do NOT include piece counts like "5 pieces" or descriptions.
 • servingsPerContainer: Number of servings in package
 
 Nutrition Facts (per serving):
-• calories: Calories (kcal)
-• protein: Protein (g)
-• carbs: Total Carbohydrates (g)
-• fat: Total Fat (g)
-• sugar: Sugars (g) - use 0 if not visible
-• fiber: Dietary Fiber (g) - use 0 if not visible
-• sodium: Sodium (mg) - use 0 if not visible
-• saturatedFat: Saturated Fat (g) - use 0 if not visible
-• cholesterol: Cholesterol (mg) - use 0 if not visible
+For each nutrient, extract the value AND set the FromLabel flag:
+• [nutrient]FromLabel = true if clearly visible on label
+• [nutrient]FromLabel = false if estimated or not visible (use 0 for value)
+
+Required nutrients:
+• calories + caloriesFromLabel
+• protein + proteinFromLabel (grams)
+• carbs + carbsFromLabel (grams)
+• fat + fatFromLabel (grams)
+
+Optional nutrients (use 0 and false if not visible):
+• sugar + sugarFromLabel (grams)
+• fiber + fiberFromLabel (grams)
+• sodium + sodiumFromLabel (milligrams)
+• cholesterol + cholesterolFromLabel (milligrams)
 
 Confidence:
 • confidenceScore: 0.0 to 1.0 based on label clarity
 
 **OUTPUT** (JSON only):
 {
-  "productName": "Product Name",
-  "brand": "Brand Name or null",
-  "servingSize": "1 cup (240ml)",
-  "servingsPerContainer": 2.5,
-  "calories": 200,
-  "protein": 10,
-  "carbs": 25,
-  "fat": 8,
-  "sugar": 5,
-  "fiber": 3,
-  "sodium": 150,
-  "saturatedFat": 2,
-  "cholesterol": 10,
+  "servingSize": "27g",
+  "servingsPerContainer": 10,
+  "calories": 150,
+  "caloriesFromLabel": true,
+  "protein": 2,
+  "proteinFromLabel": true,
+  "carbs": 22,
+  "carbsFromLabel": true,
+  "fat": 6,
+  "fatFromLabel": true,
+  "sugar": 11,
+  "sugarFromLabel": true,
+  "fiber": 1,
+  "fiberFromLabel": true,
+  "sodium": 105,
+  "sodiumFromLabel": true,
+  "cholesterol": 0,
+  "cholesterolFromLabel": false,
   "confidenceScore": 0.95
 }
 
