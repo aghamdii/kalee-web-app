@@ -23,6 +23,17 @@ export class FoodAiConfig {
         };
     }
 
+    // Fast config for simple OCR tasks (no thinking) - used for product label scanning
+    static getFastConfigWithSchema(responseSchema: any) {
+        return {
+            temperature: FoodAiConfig.DEFAULT_TEMPERATURE,
+            maxOutputTokens: FoodAiConfig.DEFAULT_MAX_TOKENS,
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+            // No thinkingConfig = thinking disabled for faster response
+        };
+    }
+
     // Supported languages for food analysis
     static readonly SUPPORTED_LANGUAGES = {
         en: { name: 'English', nativeName: 'English' },
