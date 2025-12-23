@@ -2,7 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import { FoodUtils } from '../shared/utils';
-import { getNotificationMessage, validateLanguage, type NotificationDay } from './messages';
+import { getNotificationMessage, validateLanguage, type NotificationType } from './messages';
 
 const db = admin.firestore();
 const messaging = admin.messaging();
@@ -10,7 +10,7 @@ const messaging = admin.messaging();
 interface NotificationPayload {
     userId: string;
     language: string;
-    day: NotificationDay;
+    type: NotificationType;
 }
 
 export const sendScheduledNotification = onRequest(
@@ -28,9 +28,9 @@ export const sendScheduledNotification = onRequest(
         }
 
         const payload = req.body as NotificationPayload;
-        const { userId, language, day } = payload;
+        const { userId, language, type } = payload;
 
-        logger.info(`[${userId}] Processing scheduled ${day} notification`);
+        logger.info(`[${userId}] Processing scheduled ${type} notification`);
 
         try {
             const userDoc = await db.collection('users').doc(userId).get();
@@ -57,7 +57,7 @@ export const sendScheduledNotification = onRequest(
 
             const currentFcmToken = userData.fcmToken;
             const validLanguage = validateLanguage(language);
-            const notificationMessage = getNotificationMessage(day, validLanguage);
+            const notificationMessage = getNotificationMessage(type, validLanguage);
 
             const message: admin.messaging.Message = {
                 notification: {
@@ -65,7 +65,7 @@ export const sendScheduledNotification = onRequest(
                     body: notificationMessage.body,
                 },
                 data: {
-                    type: `${day}_onboarding`,
+                    type: type,
                     userId: userId,
                 },
                 token: currentFcmToken,
@@ -91,7 +91,7 @@ export const sendScheduledNotification = onRequest(
 
             const duration = timer.end();
 
-            logger.info(`[${userId}] Successfully sent ${day} notification`, {
+            logger.info(`[${userId}] Successfully sent ${type} notification`, {
                 messageId: response,
                 language: validLanguage,
                 duration: `${duration}ms`
@@ -99,7 +99,7 @@ export const sendScheduledNotification = onRequest(
 
             await db.collection('notificationLogs').add({
                 userId,
-                type: `${day}_onboarding`,
+                type: type,
                 title: notificationMessage.title,
                 body: notificationMessage.body,
                 sentAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -113,14 +113,14 @@ export const sendScheduledNotification = onRequest(
             res.status(200).send({ success: true, messageId: response });
         } catch (error: any) {
             const duration = timer.end();
-            logger.error(`[${userId}] Failed to send ${day} notification:`, {
+            logger.error(`[${userId}] Failed to send ${type} notification:`, {
                 error: error.message,
                 duration: `${duration}ms`
             });
 
             await db.collection('notificationLogs').add({
                 userId,
-                type: `${day}_onboarding`,
+                type: type,
                 sentAt: admin.firestore.FieldValue.serverTimestamp(),
                 date: new Date().toISOString().split('T')[0],
                 success: false,

@@ -3,6 +3,7 @@ import { CloudTasksClient } from '@google-cloud/tasks';
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import { FoodUtils } from '../shared/utils';
+import { NotificationType } from './messages';
 
 const tasksClient = new CloudTasksClient();
 const db = admin.firestore();
@@ -10,6 +11,7 @@ const db = admin.firestore();
 const PROJECT_ID = process.env.GCLOUD_PROJECT || 'kalee-prod';
 const LOCATION = 'europe-west1';
 const QUEUE_NAME = 'onboarding-notifications';
+const TRIAL_REMINDER_HOURS = 72; // 3 days after signup
 
 interface UserData {
     notificationsEnabled?: boolean;
@@ -52,26 +54,22 @@ export const scheduleOnboardingNotifications = onDocumentCreated(
 
         const language = userData.languageSelected || 'en';
 
-        logger.info(`[${profileId}] Scheduling onboarding notifications`, {
+        logger.info(`[${profileId}] Scheduling trial reminder notification`, {
             language,
             email: userData.email,
             hasFcmToken: !!userData.fcmToken
         });
 
         try {
-            await Promise.all([
-                scheduleNotificationTask(profileId, language, 'day1', 24),
-                scheduleNotificationTask(profileId, language, 'day2', 48),
-                scheduleNotificationTask(profileId, language, 'day3', 72),
-            ]);
+            await scheduleNotificationTask(profileId, language, 'trial_reminder', TRIAL_REMINDER_HOURS);
 
             const duration = timer.end();
-            logger.info(`[${profileId}] Successfully scheduled 3 onboarding notifications`, {
+            logger.info(`[${profileId}] Successfully scheduled trial reminder notification`, {
                 duration: `${duration}ms`
             });
         } catch (error) {
             const duration = timer.end();
-            logger.error(`[${profileId}] Failed to schedule notifications:`, {
+            logger.error(`[${profileId}] Failed to schedule notification:`, {
                 error,
                 duration: `${duration}ms`
             });
@@ -82,7 +80,7 @@ export const scheduleOnboardingNotifications = onDocumentCreated(
 async function scheduleNotificationTask(
     userId: string,
     language: string,
-    day: 'day1' | 'day2' | 'day3',
+    type: NotificationType,
     hoursDelay: number
 ): Promise<void> {
     const parent = tasksClient.queuePath(PROJECT_ID, LOCATION, QUEUE_NAME);
@@ -103,7 +101,7 @@ async function scheduleNotificationTask(
                 JSON.stringify({
                     userId,
                     language,
-                    day,
+                    type,
                 })
             ).toString('base64'),
             oidcToken: {
@@ -118,12 +116,12 @@ async function scheduleNotificationTask(
 
     try {
         const [response] = await tasksClient.createTask({ parent, task });
-        logger.info(`[${userId}] Scheduled ${day} notification`, {
+        logger.info(`[${userId}] Scheduled ${type} notification`, {
             taskName: response.name,
             scheduleTime: scheduleTime.toISOString(),
         });
     } catch (error) {
-        logger.error(`[${userId}] Failed to create task for ${day}:`, error);
+        logger.error(`[${userId}] Failed to create task for ${type}:`, error);
         throw error;
     }
 }

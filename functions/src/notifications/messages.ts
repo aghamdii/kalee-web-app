@@ -1,5 +1,5 @@
 /**
- * Notification messages for onboarding flow
+ * Notification messages for trial reminder
  * Supports 4 languages: Arabic, English, Japanese, Korean
  */
 
@@ -8,68 +8,32 @@ export interface NotificationMessage {
     body: string;
 }
 
-export type NotificationDay = 'day1' | 'day2' | 'day3';
+export type NotificationType = 'trial_reminder';
 export type Language = 'ar' | 'en' | 'ja' | 'ko';
 
-export const ONBOARDING_NOTIFICATIONS: Record<NotificationDay, Record<Language, NotificationMessage>> = {
-    day1: {
+export const NOTIFICATION_MESSAGES: Record<NotificationType, Record<Language, NotificationMessage>> = {
+    trial_reminder: {
         ar: {
-            title: '💪 هذه المرة مختلفة',
-            body: 'واصل رحلتك الصحية اليوم. سجل وجباتك الآن'
+            title: '💚 تذكير سريع',
+            body: 'تنتهي تجربتك المجانية خلال 4 أيام. نأمل أن كالي يساعدك في رحلتك الصحية. اشترك في أي وقت للاستمرار!'
         },
         en: {
-            title: '💪 This time is different',
-            body: 'Continue your healthy journey today. Track your meals now'
+            title: '💚 Quick reminder',
+            body: 'Your trial ends in 4 days. We hope Kalee is helping your health journey. Subscribe anytime to continue!'
         },
         ja: {
-            title: '💪 今回は違います',
-            body: '健康な生活を続けましょう。今日の食事を記録してください'
+            title: '💚 リマインダー',
+            body: '無料トライアルは4日後に終了します。Kaleeがあなたの健康の旅に役立っていることを願っています。いつでも登録して続けましょう!'
         },
         ko: {
-            title: '💪 이번엔 다릅니다',
-            body: '건강한 여정을 계속하세요. 오늘 식사를 기록하세요'
-        }
-    },
-    day2: {
-        ar: {
-            title: '🌟 الخطوات الصغيرة تصنع التغيير الكبير',
-            body: 'كل وجبة تسجلها تقربك من هدفك. استمر في التقدم'
-        },
-        en: {
-            title: '🌟 Small steps lead to big changes',
-            body: 'Every meal you track brings you closer to your goal. Keep moving forward'
-        },
-        ja: {
-            title: '🌟 小さな一歩が大きな変化を生む',
-            body: '記録する食事一つ一つが目標に近づけます。前進を続けましょう'
-        },
-        ko: {
-            title: '🌟 작은 발걸음이 큰 변화를 만듭니다',
-            body: '기록하는 모든 식사가 목표에 가까워지게 합니다. 계속 나아가세요'
-        }
-    },
-    day3: {
-        ar: {
-            title: '❤️ التغيير الحقيقي يبدأ هنا',
-            body: 'أنت لست وحدك في هذه الرحلة. سجل وجباتك واستمر في بناء مستقبلك الصحي'
-        },
-        en: {
-            title: '❤️ Real change starts here',
-            body: "You're not alone in this journey. Track your meals and keep building your healthy future"
-        },
-        ja: {
-            title: '❤️ 本当の変化はここから始まります',
-            body: 'この旅にあなたは一人ではありません。食事を記録して健康な未来を築き続けましょう'
-        },
-        ko: {
-            title: '❤️ 진정한 변화는 여기서 시작됩니다',
-            body: '이 여정에서 당신은 혼자가 아닙니다. 식사를 기록하고 건강한 미래를 계속 만들어가세요'
+            title: '💚 간단한 알림',
+            body: '무료 체험이 4일 후에 종료됩니다. Kalee가 건강 여정에 도움이 되고 있기를 바랍니다. 언제든지 구독하여 계속하세요!'
         }
     }
 };
 
-export function getNotificationMessage(day: NotificationDay, language: Language): NotificationMessage {
-    return ONBOARDING_NOTIFICATIONS[day][language];
+export function getNotificationMessage(type: NotificationType, language: Language): NotificationMessage {
+    return NOTIFICATION_MESSAGES[type][language];
 }
 
 export function validateLanguage(language: string): Language {
