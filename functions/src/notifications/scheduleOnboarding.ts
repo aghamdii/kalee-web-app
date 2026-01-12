@@ -11,7 +11,7 @@ const db = admin.firestore();
 const PROJECT_ID = process.env.GCLOUD_PROJECT || 'kalee-prod';
 const LOCATION = 'europe-west1';
 const QUEUE_NAME = 'onboarding-notifications';
-const TRIAL_REMINDER_HOURS = 72; // 3 days after signup
+const TRIAL_REMINDER_HOURS = 36; // 1.5 days after signup (reminder for tomorrow)
 
 interface UserData {
     notificationsEnabled?: boolean;

@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Profiles collection - users can read/write their own profile
+    match /profiles/{profileId} {
+      allow read, write: if request.auth != null && request.auth.uid == profileId;
+    }
+
+    // AI Sessions - users can read/write their own sessions
+    match /aiSessions/{sessionId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Food logs - users can read/write their own logs
+    match /foodLogs/{logId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Food prompt logs - only Cloud Functions can access
+    match /foodPromptLogs/{logId} {
+      allow read, write: if false;
+    }
+
+    // Promo codes - only accessible via Cloud Functions (admin functions)
+    match /promoCodes/{codeId} {
+      allow read, write: if false;
+    }
+
+    // Admin audit log - only accessible via Cloud Functions
+    match /adminAuditLog/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
