@@ -11,8 +11,8 @@
  * - Comprehensive nutrition analysis with confidence scoring
  * - Advanced product analysis with ingredient detection and health ratings
  *
- * ONBOARDING NOTIFICATIONS:
- * - Automated 3-day onboarding flow (Day 1, 2, 3 at 24h, 48h, 72h intervals)
+ * SCHEDULED NOTIFICATIONS:
+ * - On-demand notification scheduling via callable function
  * - Multi-language support (Arabic, English, Japanese, Korean)
  * - Cloud Tasks scheduling with FCM delivery
  */

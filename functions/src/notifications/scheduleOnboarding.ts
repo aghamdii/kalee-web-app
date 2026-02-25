@@ -1,4 +1,4 @@
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { CloudTasksClient } from '@google-cloud/tasks';
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
@@ -11,68 +11,71 @@ const db = admin.firestore();
 const PROJECT_ID = process.env.GCLOUD_PROJECT || 'kalee-prod';
 const LOCATION = 'europe-west1';
 const QUEUE_NAME = 'onboarding-notifications';
-const TRIAL_REMINDER_HOURS = 36; // 1.5 days after signup (reminder for tomorrow)
 
-interface UserData {
-    notificationsEnabled?: boolean;
-    fcmToken?: string;
-    languageSelected?: string;
-    email?: string;
-    displayName?: string;
-    createdAt?: number;
+interface ScheduleNotificationRequest {
+    userId: string;
+    type: NotificationType;
+    delayHours: number;
 }
 
-export const scheduleOnboardingNotifications = onDocumentCreated(
+export const scheduleOnboardingNotifications = onCall(
     {
-        document: 'profiles/{profileId}',
         region: 'europe-west1',
+        timeoutSeconds: 60,
+        memory: '256MiB',
     },
-    async (event) => {
+    async (request) => {
         const timer = FoodUtils.createTimer();
-        const profileId = event.params.profileId;
+        const { userId, type, delayHours } = request.data as ScheduleNotificationRequest;
 
-        logger.info(`[${profileId}] New profile created, fetching user data for notification eligibility`);
-
-        // Fetch user data from users collection using the same ID
-        let userData: UserData | undefined;
-        try {
-            const userDoc = await db.collection('users').doc(profileId).get();
-            if (!userDoc.exists) {
-                logger.warn(`[${profileId}] User document not found - skipping scheduling`);
-                return;
-            }
-            userData = userDoc.data() as UserData;
-        } catch (error) {
-            logger.error(`[${profileId}] Failed to fetch user document:`, error);
-            return;
+        if (!userId || !type || !delayHours) {
+            throw new HttpsError('invalid-argument', 'Missing required fields: userId, type, delayHours');
         }
 
-        if (!userData.notificationsEnabled) {
-            logger.info(`[${profileId}] Notifications disabled - skipping scheduling`);
-            return;
+        logger.info(`[${userId}] Scheduling ${type} notification with ${delayHours}h delay`);
+
+        let userData;
+        try {
+            const userDoc = await db.collection('users').doc(userId).get();
+            if (!userDoc.exists) {
+                logger.warn(`[${userId}] User document not found - skipping scheduling`);
+                return { success: false, reason: 'user_not_found' };
+            }
+            userData = userDoc.data();
+        } catch (error) {
+            logger.error(`[${userId}] Failed to fetch user document:`, error);
+            throw new HttpsError('internal', 'Failed to fetch user document');
+        }
+
+        if (!userData?.notificationsEnabled) {
+            logger.info(`[${userId}] Notifications disabled - skipping scheduling`);
+            return { success: false, reason: 'notifications_disabled' };
+        }
+
+        if (!userData?.fcmToken) {
+            logger.info(`[${userId}] No FCM token - skipping scheduling`);
+            return { success: false, reason: 'no_fcm_token' };
         }
 
         const language = userData.languageSelected || 'en';
 
-        logger.info(`[${profileId}] Scheduling trial reminder notification`, {
-            language,
-            email: userData.email,
-            hasFcmToken: !!userData.fcmToken
-        });
-
         try {
-            await scheduleNotificationTask(profileId, language, 'trial_reminder', TRIAL_REMINDER_HOURS);
+            await scheduleNotificationTask(userId, language, type, delayHours);
 
             const duration = timer.end();
-            logger.info(`[${profileId}] Successfully scheduled trial reminder notification`, {
-                duration: `${duration}ms`
+            logger.info(`[${userId}] Successfully scheduled ${type} notification`, {
+                duration: `${duration}ms`,
+                delayHours,
             });
+
+            return { success: true, delayHours, language };
         } catch (error) {
             const duration = timer.end();
-            logger.error(`[${profileId}] Failed to schedule notification:`, {
+            logger.error(`[${userId}] Failed to schedule notification:`, {
                 error,
-                duration: `${duration}ms`
+                duration: `${duration}ms`,
             });
+            throw new HttpsError('internal', 'Failed to schedule notification');
         }
     }
 );
