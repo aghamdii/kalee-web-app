@@ -27,5 +27,6 @@ export { analyzeProductFunction } from './food/analyzeProduct';
 export { scheduleOnboardingNotifications } from './notifications/scheduleOnboarding';
 export { sendScheduledNotification } from './notifications/sendScheduledNotification';
 
-// PROMO CODE REDEMPTION (for mobile app)
+// ADMIN FUNCTIONS
 export { redeemPromoCodeFunction } from './admin/redeemPromoCode';
+export { sendBulkNotificationFunction } from './admin/sendBulkNotification';

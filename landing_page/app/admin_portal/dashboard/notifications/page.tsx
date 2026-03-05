@@ -1,8 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { sendBulkNotification } from '../../actions/admin-actions';
+import { functions } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { listNotificationHistory } from '../../actions/admin-actions';
+
+interface BulkNotificationResponse {
+  success: boolean;
+  matchedCount?: number;
+  sentCount?: number;
+  failedCount?: number;
+  durationMs?: number;
+}
+
+interface NotificationRecord {
+  id: string;
+  title: string;
+  body: string;
+  language: string | null;
+  isPremium: string | null;
+  matchedCount: number;
+  sentCount: number;
+  failedCount: number;
+  staleTokensCleaned: number;
+  durationMs: number | null;
+  adminEmail: string;
+  timestamp: string | null;
+}
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  ar: 'Arabic',
+  en: 'English',
+  ja: 'Japanese',
+  ko: 'Korean',
+};
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = (ms / 1000).toFixed(1);
+  return `${seconds}s`;
+}
+
+function formatDate(isoString: string | null): string {
+  if (!isoString) return 'Unknown';
+  const date = new Date(isoString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export default function NotificationsPage() {
   const [title, setTitle] = useState('');
@@ -15,6 +65,26 @@ export default function NotificationsPage() {
     null
   );
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [history, setHistory] = useState<NotificationRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await listNotificationHistory({ pageSize: 20 });
+      if (!res.error) {
+        setHistory(res.notifications);
+      }
+    } catch (error) {
+      console.error('Error loading history:', error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
   const buildFilters = () => {
     const filters: {
@@ -31,12 +101,29 @@ export default function NotificationsPage() {
     return filters;
   };
 
+  const callBulkNotification = async (data: {
+    title: string;
+    body: string;
+    filters: ReturnType<typeof buildFilters>;
+    dryRun: boolean;
+  }): Promise<BulkNotificationResponse> => {
+    if (!functions) {
+      throw new Error('Firebase not initialized');
+    }
+    const fn = httpsCallable<typeof data, BulkNotificationResponse>(
+      functions,
+      'sendBulkNotificationFunction'
+    );
+    const result = await fn(data);
+    return result.data;
+  };
+
   const handlePreview = async () => {
     setSending(true);
     setResult(null);
     try {
       const filters = buildFilters();
-      const response = await sendBulkNotification({
+      const response = await callBulkNotification({
         title: 'Preview',
         body: 'Preview',
         filters,
@@ -49,7 +136,7 @@ export default function NotificationsPage() {
           canSend: response.sentCount || 0,
         });
       } else {
-        setResult({ success: false, message: response.error || 'Failed to preview' });
+        setResult({ success: false, message: 'Failed to preview' });
       }
     } catch (error) {
       console.error('Error previewing:', error);
@@ -77,7 +164,7 @@ export default function NotificationsPage() {
     setResult(null);
     try {
       const filters = buildFilters();
-      const response = await sendBulkNotification({
+      const response = await callBulkNotification({
         title,
         body,
         filters,
@@ -85,15 +172,23 @@ export default function NotificationsPage() {
       });
 
       if (response.success) {
+        const durationMsg = response.durationMs
+          ? ` in ${formatDuration(response.durationMs)}`
+          : '';
+        const failedMsg = response.failedCount
+          ? ` (${response.failedCount} failed, stale tokens cleaned)`
+          : '';
         setResult({
           success: true,
-          message: `Successfully sent to ${response.sentCount} users (${response.matchedCount} matched filters)`,
+          message: `Successfully sent to ${response.sentCount} users (${response.matchedCount} matched filters)${failedMsg}${durationMsg}`,
         });
         setTitle('');
         setBody('');
         setPreviewCount(null);
+        // Refresh history to show the new entry
+        loadHistory();
       } else {
-        setResult({ success: false, message: response.error || 'Failed to send' });
+        setResult({ success: false, message: 'Failed to send' });
       }
     } catch (error) {
       console.error('Error sending:', error);
@@ -256,6 +351,80 @@ export default function NotificationsPage() {
           {result.message}
         </div>
       )}
+
+      {/* Notification History */}
+      <div className="mt-10">
+        <h3 className="text-xl font-bold text-gray-900 mb-4">Notification History</h3>
+
+        {historyLoading ? (
+          <div className="text-sm text-gray-500">Loading history...</div>
+        ) : history.length === 0 ? (
+          <div className="text-sm text-gray-500">No notifications sent yet.</div>
+        ) : (
+          <div className="space-y-4">
+            {history.map((entry) => (
+              <div key={entry.id} className="bg-white rounded-lg shadow p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="font-semibold text-gray-900">{entry.title}</div>
+                    <div className="text-sm text-gray-600 mt-1">{entry.body}</div>
+                  </div>
+                  <div className="text-xs text-gray-400 whitespace-nowrap ml-4">
+                    {formatDate(entry.timestamp)}
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {entry.language && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {LANGUAGE_LABELS[entry.language] || entry.language}
+                    </span>
+                  )}
+                  {entry.isPremium && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      {entry.isPremium}
+                    </span>
+                  )}
+                  {!entry.language && !entry.isPremium && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                      All Users
+                    </span>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-gray-50 rounded-md px-3 py-2">
+                    <div className="text-gray-500 text-xs">Matched</div>
+                    <div className="font-semibold text-gray-900">{entry.matchedCount}</div>
+                  </div>
+                  <div className="bg-green-50 rounded-md px-3 py-2">
+                    <div className="text-green-600 text-xs">Sent</div>
+                    <div className="font-semibold text-green-700">{entry.sentCount}</div>
+                  </div>
+                  <div className="bg-red-50 rounded-md px-3 py-2">
+                    <div className="text-red-500 text-xs">Failed</div>
+                    <div className="font-semibold text-red-700">{entry.failedCount}</div>
+                  </div>
+                  <div className="bg-orange-50 rounded-md px-3 py-2">
+                    <div className="text-orange-500 text-xs">Tokens Cleaned</div>
+                    <div className="font-semibold text-orange-700">{entry.staleTokensCleaned}</div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+                  <span>By {entry.adminEmail}</span>
+                  {entry.durationMs && (
+                    <span>Completed in {formatDuration(entry.durationMs)}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

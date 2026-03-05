@@ -548,6 +548,21 @@ export async function sendPushNotification(options: {
     const messageId = await messaging.send({
       token: fcmToken,
       notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          defaultVibrateTimings: true,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
     });
 
     // Log the notification with message ID
@@ -570,6 +585,14 @@ export async function sendPushNotification(options: {
 
     if (errorCode === 'messaging/invalid-registration-token' ||
         errorCode === 'messaging/registration-token-not-registered') {
+      // Clean up the stale token
+      try {
+        const { db: fireDb } = getFirebaseAdmin();
+        await fireDb.collection('users').doc(userId).update({ fcmToken: null });
+        console.log(`Cleaned stale FCM token for user ${userId}`);
+      } catch (cleanupErr) {
+        console.error(`Failed to clean stale token for user ${userId}:`, cleanupErr);
+      }
       return {
         success: false,
         error: 'Invalid or expired FCM token. User may have uninstalled the app or disabled notifications.'
@@ -590,7 +613,7 @@ export async function sendBulkNotification(options: {
     hasNotifications?: boolean;
   };
   dryRun?: boolean;
-}): Promise<{ success: boolean; sentCount?: number; matchedCount?: number; error?: string }> {
+}): Promise<{ success: boolean; sentCount?: number; matchedCount?: number; failedCount?: number; error?: string }> {
   const admin = await verifyAdmin();
   if (!admin) {
     return { success: false, error: 'Unauthorized' };
@@ -615,32 +638,100 @@ export async function sendBulkNotification(options: {
       query = query.where('notificationsEnabled', '==', true);
     }
 
-    const snapshot = await query.get();
-    const usersWithTokens = snapshot.docs.filter((doc) => doc.data().fcmToken);
+    // Paginate through users to avoid loading all into memory
+    const PAGE_SIZE = 500;
+    let matchedCount = 0;
+    let sentCount = 0;
+    let failedCount = 0;
+    let lastDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+    const staleTokenUserIds: string[] = [];
+
+    const messaging = getMessaging();
+
+    while (true) {
+      let pageQuery = query.limit(PAGE_SIZE);
+      if (lastDoc) {
+        pageQuery = pageQuery.startAfter(lastDoc);
+      }
+
+      const snapshot = await pageQuery.get();
+      if (snapshot.empty) break;
+
+      matchedCount += snapshot.docs.length;
+      lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+      const usersWithTokens = snapshot.docs.filter((doc) => doc.data().fcmToken);
+
+      if (dryRun) {
+        sentCount += usersWithTokens.length;
+        if (snapshot.docs.length < PAGE_SIZE) break;
+        continue;
+      }
+
+      // Build FCM messages for batch sending
+      const messages = usersWithTokens.map((doc) => ({
+        token: doc.data().fcmToken as string,
+        notification: { title, body },
+        android: {
+          priority: 'high' as const,
+          notification: {
+            sound: 'default',
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      }));
+
+      // sendEach handles up to 500 messages per call
+      const batchResponse = await messaging.sendEach(messages);
+      sentCount += batchResponse.successCount;
+      failedCount += batchResponse.failureCount;
+
+      // Clean up stale tokens for failed sends
+      batchResponse.responses.forEach((resp, idx) => {
+        if (resp.error) {
+          const code = resp.error.code;
+          if (
+            code === 'messaging/invalid-registration-token' ||
+            code === 'messaging/registration-token-not-registered'
+          ) {
+            staleTokenUserIds.push(usersWithTokens[idx].id);
+          }
+        }
+      });
+
+      if (snapshot.docs.length < PAGE_SIZE) break;
+    }
 
     if (dryRun) {
       return {
         success: true,
-        matchedCount: snapshot.docs.length,
-        sentCount: usersWithTokens.length,
+        matchedCount,
+        sentCount,
       };
     }
 
-    const messaging = getMessaging();
-    let sentCount = 0;
-
-    // Send notifications one-by-one (safe, ~1-3 min for 1000 users)
-    for (const userDoc of usersWithTokens) {
-      const fcmToken = userDoc.data().fcmToken;
-      try {
-        await messaging.send({
-          token: fcmToken,
-          notification: { title, body },
-        });
-        sentCount++;
-      } catch (err) {
-        console.error(`Failed to send to user ${userDoc.id}:`, err);
+    // Remove stale FCM tokens in batches
+    if (staleTokenUserIds.length > 0) {
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < staleTokenUserIds.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        const chunk = staleTokenUserIds.slice(i, i + BATCH_SIZE);
+        for (const userId of chunk) {
+          batch.update(db.collection('users').doc(userId), {
+            fcmToken: null,
+          });
+        }
+        await batch.commit();
       }
+      console.log(`Cleaned up ${staleTokenUserIds.length} stale FCM tokens`);
     }
 
     // Log the bulk notification
@@ -648,11 +739,19 @@ export async function sendBulkNotification(options: {
       action: 'bulk_notification_sent',
       adminId: admin.uid,
       adminEmail: admin.email,
-      details: { title, body, filters, matchedCount: snapshot.docs.length, sentCount },
+      details: {
+        title,
+        body,
+        filters,
+        matchedCount,
+        sentCount,
+        failedCount,
+        staleTokensCleaned: staleTokenUserIds.length,
+      },
       timestamp: new Date(),
     });
 
-    return { success: true, matchedCount: snapshot.docs.length, sentCount };
+    return { success: true, matchedCount, sentCount, failedCount };
   } catch (error) {
     console.error('Error sending bulk notifications:', error);
     return { success: false, error: 'Failed to send notifications' };
@@ -742,6 +841,70 @@ export async function updateFeedbackStatus(
   } catch (error) {
     console.error('Error updating feedback status:', error);
     return { success: false, error: 'Failed to update status' };
+  }
+}
+
+// List notification history from audit log
+export async function listNotificationHistory(options: {
+  pageSize?: number;
+}): Promise<{
+  notifications: Array<{
+    id: string;
+    title: string;
+    body: string;
+    language: string | null;
+    isPremium: string | null;
+    matchedCount: number;
+    sentCount: number;
+    failedCount: number;
+    staleTokensCleaned: number;
+    durationMs: number | null;
+    adminEmail: string;
+    timestamp: string | null;
+  }>;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return { notifications: [], error: 'Unauthorized' };
+  }
+
+  const { pageSize = 20 } = options;
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const snapshot = await db
+      .collection('adminAuditLog')
+      .where('action', '==', 'bulk_notification_sent')
+      .orderBy('timestamp', 'desc')
+      .limit(pageSize)
+      .get();
+
+    const notifications = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const details = data.details || {};
+      return {
+        id: doc.id,
+        title: details.title || '',
+        body: details.body || '',
+        language: details.filters?.language || null,
+        isPremium: details.filters?.isPremium !== undefined
+          ? (details.filters.isPremium ? 'Premium' : 'Free')
+          : null,
+        matchedCount: details.matchedCount || 0,
+        sentCount: details.sentCount || 0,
+        failedCount: details.failedCount || 0,
+        staleTokensCleaned: details.staleTokensCleaned || 0,
+        durationMs: details.durationMs || null,
+        adminEmail: data.adminEmail || '',
+        timestamp: data.timestamp?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    return { notifications };
+  } catch (error) {
+    console.error('Error listing notification history:', error);
+    return { notifications: [], error: 'Failed to list notification history' };
   }
 }
 
