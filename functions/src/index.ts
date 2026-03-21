@@ -30,3 +30,4 @@ export { sendScheduledNotification } from './notifications/sendScheduledNotifica
 // ADMIN FUNCTIONS
 export { redeemPromoCodeFunction } from './admin/redeemPromoCode';
 export { sendBulkNotificationFunction } from './admin/sendBulkNotification';
+export { syncRevenueCatDataFunction } from './admin/syncRevenueCatData';

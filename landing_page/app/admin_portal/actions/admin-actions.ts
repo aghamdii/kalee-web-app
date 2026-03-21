@@ -84,6 +84,7 @@ export async function listUsers(options: {
     createdAt: string | null;
     notificationsEnabled: boolean;
     languageSelected: string;
+    subscriptionStatus: 'active' | 'trial' | 'grace' | 'expired' | 'free' | 'unknown';
   }>;
   nextPageToken: string | null;
   hasMore: boolean;
@@ -99,11 +100,37 @@ export async function listUsers(options: {
   try {
     const { db } = getFirebaseAdmin();
 
+    // Helper to determine subscription status from RevenueCat data
+    function getSubStatus(rcData: FirebaseFirestore.DocumentData | undefined): 'active' | 'trial' | 'grace' | 'expired' | 'free' | 'unknown' {
+      if (!rcData) return 'unknown';
+      const entitlements = rcData.entitlements || {};
+      const proEnt = entitlements['Pro'];
+      if (!proEnt) return 'free';
+
+      const expiresDate = proEnt.expires_date;
+      const isLifetime = expiresDate === null;
+      const isActive = isLifetime || (expiresDate && new Date(expiresDate) > new Date());
+
+      if (!isActive) return 'expired';
+
+      // Check grace period
+      const gracePeriod = proEnt.grace_period_expires_date;
+      if (gracePeriod && new Date(gracePeriod) > new Date()) return 'grace';
+
+      // Check trial
+      const productId = proEnt.product_identifier;
+      const sub = productId ? (rcData.subscriptions || {})[productId] : null;
+      if (sub?.period_type === 'trial') return 'trial';
+
+      return 'active';
+    }
+
     // If searching by userId, get the specific document
     if (searchQuery && searchQuery.trim() && searchType === 'userId') {
       const userDoc = await db.collection('users').doc(searchQuery.trim()).get();
       if (userDoc.exists) {
         const data = userDoc.data()!;
+        const rcDoc = await db.collection('revenuecatCustomersInfo').doc(searchQuery.trim()).get();
         return {
           users: [{
             id: userDoc.id,
@@ -112,6 +139,7 @@ export async function listUsers(options: {
             createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : null,
             notificationsEnabled: data.notificationsEnabled || false,
             languageSelected: data.languageSelected || 'en',
+            subscriptionStatus: getSubStatus(rcDoc.exists ? rcDoc.data() : undefined),
           }],
           nextPageToken: null,
           hasMore: false,
@@ -139,6 +167,14 @@ export async function listUsers(options: {
 
     const snapshot = await query.get();
 
+    // Batch-fetch RevenueCat data for all users in this page (single getAll call)
+    const rcRefs = snapshot.docs.map((doc) => db.collection('revenuecatCustomersInfo').doc(doc.id));
+    const rcDocs = rcRefs.length > 0 ? await db.getAll(...rcRefs) : [];
+    const rcMap = new Map<string, FirebaseFirestore.DocumentData>();
+    rcDocs.forEach((doc) => {
+      if (doc.exists) rcMap.set(doc.id, doc.data()!);
+    });
+
     const users = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -148,6 +184,7 @@ export async function listUsers(options: {
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
         notificationsEnabled: data.notificationsEnabled || false,
         languageSelected: data.languageSelected || 'en',
+        subscriptionStatus: getSubStatus(rcMap.get(doc.id)),
       };
     });
 
@@ -905,6 +942,248 @@ export async function listNotificationHistory(options: {
   } catch (error) {
     console.error('Error listing notification history:', error);
     return { notifications: [], error: 'Failed to list notification history' };
+  }
+}
+
+// Fetch all user insights (no server-side filtering — filtering/aggregation done client-side)
+export async function fetchAllInsights(): Promise<{
+  insights: Array<{
+    userId: string;
+    acquisitionSource: string | null;
+    acquisitionSourceOther: string | null;
+    influencerName: string | null;
+    primaryMotivation: string | null;
+    currentTrackingMethod: string | null;
+    trackingAppName: string | null;
+    eatingHabits: string | null;
+    locale: string;
+    platform: string;
+    appVersion: string;
+    completedAt: string | null;
+  }>;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return { insights: [], error: 'Unauthorized' };
+  }
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const snapshot = await db.collection('userInsights').get();
+
+    const insights = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        userId: doc.id,
+        acquisitionSource: data.acquisitionSource || null,
+        acquisitionSourceOther: data.acquisitionSourceOther || null,
+        influencerName: data.influencerName || null,
+        primaryMotivation: data.primaryMotivation || null,
+        currentTrackingMethod: data.currentTrackingMethod || null,
+        trackingAppName: data.trackingAppName || null,
+        eatingHabits: data.eatingHabits || null,
+        locale: data.locale || 'en',
+        platform: data.platform || 'unknown',
+        appVersion: data.appVersion || '',
+        completedAt: data.completedAt ? new Date(data.completedAt).toISOString() : null,
+      };
+    });
+
+    return { insights };
+  } catch (error) {
+    console.error('Error fetching insights:', error);
+    return { insights: [], error: 'Failed to fetch insights' };
+  }
+}
+
+// Get RevenueCat customer info and subscription events for a user
+export async function getUserSubscriptionInfo(userId: string): Promise<{
+  customerInfo: {
+    entitlements: Record<string, {
+      expires_date: string | null;
+      grace_period_expires_date: string | null;
+      product_identifier: string;
+      purchase_date: string;
+    }>;
+    subscriptions: Record<string, {
+      auto_resume_date: string | null;
+      billing_issues_detected_at: string | null;
+      display_name: string | null;
+      expires_date: string;
+      grace_period_expires_date: string | null;
+      is_sandbox: boolean;
+      original_purchase_date: string;
+      ownership_type: string;
+      period_type: string;
+      price: { amount: number; currency: string } | null;
+      purchase_date: string;
+      refunded_at: string | null;
+      store: string;
+      store_transaction_id: string;
+      unsubscribe_detected_at: string | null;
+    }>;
+    non_subscriptions: Record<string, unknown>;
+    original_app_user_id: string;
+    first_seen: string;
+    last_seen: string;
+    management_url: string | null;
+    aliases: string[];
+  } | null;
+  events: Array<{
+    id: string;
+    type: string;
+    event_timestamp_ms: number;
+    product_id: string | null;
+    store: string | null;
+    expiration_at_ms: number | null;
+    [key: string]: unknown;
+  }>;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return { customerInfo: null, events: [], error: 'Unauthorized' };
+  }
+
+  try {
+    const { db } = getFirebaseAdmin();
+
+    // Fetch customer info
+    const customerDoc = await db.collection('revenuecatCustomersInfo').doc(userId).get();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = customerDoc.exists ? (customerDoc.data() as any) : null;
+    const customerInfo = raw ? {
+      entitlements: (raw.entitlements || {}) as Record<string, { expires_date: string | null; grace_period_expires_date: string | null; product_identifier: string; purchase_date: string }>,
+      subscriptions: (raw.subscriptions || {}) as Record<string, { auto_resume_date: string | null; billing_issues_detected_at: string | null; display_name: string | null; expires_date: string; grace_period_expires_date: string | null; is_sandbox: boolean; original_purchase_date: string; ownership_type: string; period_type: string; price: { amount: number; currency: string } | null; purchase_date: string; refunded_at: string | null; store: string; store_transaction_id: string; unsubscribe_detected_at: string | null }>,
+      non_subscriptions: (raw.non_subscriptions || {}) as Record<string, unknown>,
+      original_app_user_id: raw.original_app_user_id || '',
+      first_seen: raw.first_seen || '',
+      last_seen: raw.last_seen || '',
+      management_url: raw.management_url || null,
+      aliases: (raw.aliases || []) as string[],
+    } : null;
+
+    // Fetch subscription events (separate try/catch so a missing index doesn't hide customerInfo)
+    let events: Array<{
+      id: string;
+      type: string;
+      event_timestamp_ms: number;
+      product_id: string | null;
+      store: string | null;
+      expiration_at_ms: number | null;
+    }> = [];
+
+    try {
+      const eventsSnapshot = await db
+        .collection('revenuecatSubscriptionEvents')
+        .where('app_user_id', '==', userId)
+        .orderBy('event_timestamp_ms', 'desc')
+        .limit(20)
+        .get();
+
+      events = eventsSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          type: data.type || 'unknown',
+          event_timestamp_ms: data.event_timestamp_ms || 0,
+          product_id: data.product_id || null,
+          store: data.store || null,
+          expiration_at_ms: data.expiration_at_ms || null,
+        };
+      });
+
+      // If no events found by app_user_id, try aliases
+      if (events.length === 0 && customerInfo?.aliases) {
+        for (const alias of customerInfo.aliases) {
+          if (alias === userId) continue;
+          const aliasSnapshot = await db
+            .collection('revenuecatSubscriptionEvents')
+            .where('app_user_id', '==', alias)
+            .orderBy('event_timestamp_ms', 'desc')
+            .limit(20)
+            .get();
+          if (!aliasSnapshot.empty) {
+            events = aliasSnapshot.docs.map((doc) => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                type: data.type || 'unknown',
+                event_timestamp_ms: data.event_timestamp_ms || 0,
+                product_id: data.product_id || null,
+                store: data.store || null,
+                expiration_at_ms: data.expiration_at_ms || null,
+              };
+            });
+            break;
+          }
+        }
+      }
+    } catch (eventsError) {
+      console.error('Error fetching subscription events (may need composite index):', eventsError);
+      // Continue — customerInfo is still valid
+    }
+
+    return {
+      customerInfo: customerInfo || null,
+      events,
+    };
+  } catch (error) {
+    console.error('Error fetching subscription info:', error);
+    return { customerInfo: null, events: [], error: 'Failed to fetch subscription info' };
+  }
+}
+
+// Get user insights (onboarding survey) for a single user
+export async function getUserInsight(userId: string): Promise<{
+  insight: {
+    acquisitionSource: string | null;
+    acquisitionSourceOther: string | null;
+    influencerName: string | null;
+    primaryMotivation: string | null;
+    currentTrackingMethod: string | null;
+    trackingAppName: string | null;
+    eatingHabits: string | null;
+    locale: string;
+    platform: string;
+    appVersion: string;
+    completedAt: string | null;
+  } | null;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return { insight: null, error: 'Unauthorized' };
+  }
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const doc = await db.collection('userInsights').doc(userId).get();
+
+    if (!doc.exists) {
+      return { insight: null };
+    }
+
+    const data = doc.data()!;
+    return {
+      insight: {
+        acquisitionSource: data.acquisitionSource || null,
+        acquisitionSourceOther: data.acquisitionSourceOther || null,
+        influencerName: data.influencerName || null,
+        primaryMotivation: data.primaryMotivation || null,
+        currentTrackingMethod: data.currentTrackingMethod || null,
+        trackingAppName: data.trackingAppName || null,
+        eatingHabits: data.eatingHabits || null,
+        locale: data.locale || 'en',
+        platform: data.platform || 'unknown',
+        appVersion: data.appVersion || '',
+        completedAt: data.completedAt ? new Date(data.completedAt).toISOString() : null,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching user insight:', error);
+    return { insight: null, error: 'Failed to fetch insight' };
   }
 }
 

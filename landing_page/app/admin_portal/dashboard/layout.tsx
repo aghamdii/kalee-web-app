@@ -8,9 +8,11 @@ import { useEffect } from 'react';
 const navItems = [
   { href: '/admin_portal/dashboard', label: 'Overview', exact: true },
   { href: '/admin_portal/dashboard/users', label: 'Users', exact: false },
+  { href: '/admin_portal/dashboard/insights', label: 'Insights', exact: false },
   { href: '/admin_portal/dashboard/promo-codes', label: 'Promo Codes', exact: false },
   { href: '/admin_portal/dashboard/notifications', label: 'Notifications', exact: false },
   { href: '/admin_portal/dashboard/feedback', label: 'Feedback', exact: false },
+  { href: '/admin_portal/dashboard/sync', label: 'Sync', exact: false },
 ];
 
 export default function DashboardLayout({

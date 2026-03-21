@@ -12,7 +12,17 @@ interface User {
   createdAt: string | null;
   notificationsEnabled: boolean;
   languageSelected: string;
+  subscriptionStatus: 'active' | 'trial' | 'grace' | 'expired' | 'free' | 'unknown';
 }
+
+const SUB_STATUS_STYLES: Record<string, { label: string; color: string }> = {
+  active: { label: 'Pro', color: 'bg-green-100 text-green-800' },
+  trial: { label: 'Trial', color: 'bg-blue-100 text-blue-800' },
+  grace: { label: 'Grace', color: 'bg-yellow-100 text-yellow-800' },
+  expired: { label: 'Expired', color: 'bg-red-100 text-red-800' },
+  free: { label: 'Free', color: 'bg-gray-100 text-gray-600' },
+  unknown: { label: 'Free', color: 'bg-gray-100 text-gray-600' },
+};
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -150,6 +160,9 @@ export default function UsersPage() {
                       Name
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Language
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -166,7 +179,7 @@ export default function UsersPage() {
                 <tbody className="divide-y divide-gray-200">
                   {users.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                         No users found
                       </td>
                     </tr>
@@ -180,6 +193,16 @@ export default function UsersPage() {
                         <td className="px-6 py-4 text-sm text-gray-900">{user.email || '-'}</td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {user.displayName || '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          {(() => {
+                            const s = SUB_STATUS_STYLES[user.subscriptionStatus] || SUB_STATUS_STYLES.unknown;
+                            return (
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>
+                                {s.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {user.languageSelected.toUpperCase()}

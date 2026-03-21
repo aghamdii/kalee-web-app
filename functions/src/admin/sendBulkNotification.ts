@@ -6,15 +6,41 @@ import { isAdminEmail } from './adminConfig';
 const db = admin.firestore();
 const messaging = admin.messaging();
 
+type SubscriptionStatus = 'pro' | 'trial' | 'expired' | 'free';
+
 interface BulkNotificationRequest {
     title: string;
     body: string;
     filters: {
         language?: string;
-        isPremium?: boolean;
+        subscriptionStatuses?: SubscriptionStatus[];
         hasNotifications?: boolean;
     };
     dryRun?: boolean;
+}
+
+// Classify a user's subscription status from their RevenueCat data
+function classifySubscriptionStatus(
+    rcData: admin.firestore.DocumentData | undefined
+): SubscriptionStatus {
+    if (!rcData) return 'free';
+
+    const entitlements = rcData.entitlements || {};
+    const proEnt = entitlements['Pro'];
+    if (!proEnt) return 'free';
+
+    const expiresDate = proEnt.expires_date;
+    const isLifetime = expiresDate === null;
+    const isActive = isLifetime || (expiresDate && new Date(expiresDate) > new Date());
+
+    if (!isActive) return 'expired';
+
+    // Check if trial
+    const productId = proEnt.product_identifier;
+    const sub = productId ? (rcData.subscriptions || {})[productId] : null;
+    if (sub?.period_type === 'trial') return 'trial';
+
+    return 'pro';
 }
 
 export const sendBulkNotificationFunction = onCall(
@@ -35,23 +61,23 @@ export const sendBulkNotificationFunction = onCall(
             throw new HttpsError('permission-denied', 'Not authorized as admin');
         }
 
-        const { title, body, filters, dryRun = false } = request.data as BulkNotificationRequest;
+        const { title, body, filters = {}, dryRun = false } = (request.data || {}) as BulkNotificationRequest;
 
         if (!title || !body) {
             throw new HttpsError('invalid-argument', 'Title and body are required');
         }
 
+        const subscriptionStatuses = filters?.subscriptionStatuses || [];
+        const hasSubFilter = subscriptionStatuses.length > 0;
+
         try {
             const startTime = Date.now();
 
-            // Build query based on filters
+            // Build query based on filters (language + notifications only)
             let query: admin.firestore.Query = db.collection('users');
 
             if (filters.language) {
                 query = query.where('languageSelected', '==', filters.language);
-            }
-            if (filters.isPremium !== undefined) {
-                query = query.where('isPremium', '==', filters.isPremium);
             }
             if (filters.hasNotifications) {
                 query = query.where('notificationsEnabled', '==', true);
@@ -74,10 +100,30 @@ export const sendBulkNotificationFunction = onCall(
                 const snapshot = await pageQuery.get();
                 if (snapshot.empty) break;
 
-                matchedCount += snapshot.docs.length;
                 lastDoc = snapshot.docs[snapshot.docs.length - 1];
 
-                const usersWithTokens = snapshot.docs.filter((doc) => doc.data().fcmToken);
+                // If subscription filter is active, batch-fetch RevenueCat data and filter
+                let filteredDocs = snapshot.docs;
+
+                if (hasSubFilter) {
+                    const rcRefs = snapshot.docs.map((doc) =>
+                        db.collection('revenuecatCustomersInfo').doc(doc.id)
+                    );
+                    const rcDocs = await db.getAll(...rcRefs);
+                    const rcMap = new Map<string, admin.firestore.DocumentData>();
+                    rcDocs.forEach((doc) => {
+                        if (doc.exists) rcMap.set(doc.id, doc.data()!);
+                    });
+
+                    filteredDocs = snapshot.docs.filter((doc) => {
+                        const status = classifySubscriptionStatus(rcMap.get(doc.id));
+                        return subscriptionStatuses.includes(status);
+                    });
+                }
+
+                matchedCount += filteredDocs.length;
+
+                const usersWithTokens = filteredDocs.filter((doc) => doc.data().fcmToken);
 
                 if (dryRun) {
                     sentCount += usersWithTokens.length;

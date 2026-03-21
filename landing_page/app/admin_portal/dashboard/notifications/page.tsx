@@ -36,6 +36,15 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ko: 'Korean',
 };
 
+type SubscriptionStatus = 'pro' | 'trial' | 'expired' | 'free';
+
+const SUB_STATUS_OPTIONS: { key: SubscriptionStatus; label: string; color: string }[] = [
+  { key: 'pro', label: 'Pro', color: 'bg-green-100 text-green-800 border-green-300' },
+  { key: 'trial', label: 'Trial', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+  { key: 'expired', label: 'Expired', color: 'bg-red-100 text-red-800 border-red-300' },
+  { key: 'free', label: 'Free', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+];
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   const seconds = (ms / 1000).toFixed(1);
@@ -58,7 +67,7 @@ export default function NotificationsPage() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [language, setLanguage] = useState('');
-  const [isPremium, setIsPremium] = useState<string>('');
+  const [subscriptionStatuses, setSubscriptionStatuses] = useState<SubscriptionStatus[]>([]);
   const [hasNotifications, setHasNotifications] = useState(true);
   const [sending, setSending] = useState(false);
   const [previewCount, setPreviewCount] = useState<{ matched: number; canSend: number } | null>(
@@ -86,16 +95,22 @@ export default function NotificationsPage() {
     loadHistory();
   }, []);
 
+  const toggleSubStatus = (status: SubscriptionStatus) => {
+    setSubscriptionStatuses((prev) =>
+      prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
+    );
+    setPreviewCount(null);
+  };
+
   const buildFilters = () => {
     const filters: {
       language?: string;
-      isPremium?: boolean;
+      subscriptionStatuses?: SubscriptionStatus[];
       hasNotifications?: boolean;
     } = {};
 
     if (language) filters.language = language;
-    if (isPremium === 'true') filters.isPremium = true;
-    if (isPremium === 'false') filters.isPremium = false;
+    if (subscriptionStatuses.length > 0) filters.subscriptionStatuses = subscriptionStatuses;
     if (hasNotifications) filters.hasNotifications = true;
 
     return filters;
@@ -185,7 +200,6 @@ export default function NotificationsPage() {
         setTitle('');
         setBody('');
         setPreviewCount(null);
-        // Refresh history to show the new entry
         loadHistory();
       } else {
         setResult({ success: false, message: 'Failed to send' });
@@ -227,21 +241,30 @@ export default function NotificationsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Subscription Status
               </label>
-              <select
-                value={isPremium}
-                onChange={(e) => {
-                  setIsPremium(e.target.value);
-                  setPreviewCount(null);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-              >
-                <option value="">All Users</option>
-                <option value="true">Premium Only</option>
-                <option value="false">Free Users Only</option>
-              </select>
+              <div className="flex flex-wrap gap-2">
+                {SUB_STATUS_OPTIONS.map((opt) => {
+                  const isSelected = subscriptionStatuses.includes(opt.key);
+                  return (
+                    <button
+                      key={opt.key}
+                      onClick={() => toggleSubStatus(opt.key)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                        isSelected
+                          ? `${opt.color} ring-2 ring-offset-1 ring-green-500`
+                          : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {subscriptionStatuses.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">No filter — sends to all users</p>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
