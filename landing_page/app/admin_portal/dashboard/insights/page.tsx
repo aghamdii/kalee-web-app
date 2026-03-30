@@ -140,16 +140,32 @@ function DistributionChart({
 function RankedList({
   title,
   items,
+  previewCount = 10,
 }: {
   title: string;
   items: Array<{ name: string; count: number }>;
+  previewCount?: number;
 }) {
+  const [showAll, setShowAll] = useState(false);
   if (items.length === 0) return null;
+  const visible = showAll ? items : items.slice(0, previewCount);
+  const hasMore = items.length > previewCount;
+
   return (
     <div className="bg-white rounded-lg shadow p-4">
-      <h4 className="text-sm font-semibold text-gray-700 mb-3">{title}</h4>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-gray-700">{title}</h4>
+        {hasMore && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="text-xs text-green-600 hover:text-green-700 font-medium"
+          >
+            {showAll ? 'Show Top 10' : `View All (${items.length})`}
+          </button>
+        )}
+      </div>
       <div className="space-y-1.5">
-        {items.map((item, i) => (
+        {visible.map((item, i) => (
           <div key={item.name} className="flex items-center justify-between text-sm">
             <span className="text-gray-700">
               <span className="text-gray-400 mr-2">{i + 1}.</span>
@@ -199,13 +215,11 @@ function computeAggregates(data: Insight[]) {
 
   agg.topInfluencers = Object.entries(influencerCounts)
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
+    .sort((a, b) => b.count - a.count);
 
   agg.topTrackingApps = Object.entries(trackingAppCounts)
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
+    .sort((a, b) => b.count - a.count);
 
   return agg;
 }
