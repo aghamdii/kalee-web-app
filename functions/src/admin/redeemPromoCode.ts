@@ -24,6 +24,18 @@ interface PromoRedemption {
   errorMessage?: string | null;
 }
 
+interface DiscountCodeResponse {
+  success: true;
+  type: 'discount';
+  offeringId: string;
+}
+
+interface GiftCodeResponse {
+  success: true;
+  entitlementId: string;
+  durationDays: number;
+}
+
 export const redeemPromoCodeFunction = onCall({
   region: 'europe-west1',
   timeoutSeconds: 60,
@@ -54,34 +66,87 @@ export const redeemPromoCodeFunction = onCall({
     const db = admin.firestore();
     const promoRef = db.collection('promoCodes').doc(normalizedCode);
 
-    // Use transaction to prevent race conditions
-    const result = await db.runTransaction(async (transaction) => {
-      const promoDoc = await transaction.get(promoRef);
+    // Read promo code document
+    const promoDoc = await promoRef.get();
 
-      if (!promoDoc.exists) {
-        throw new HttpsError('not-found', 'Invalid promo code');
-      }
+    if (!promoDoc.exists) {
+      throw new HttpsError('not-found', 'Invalid promo code');
+    }
 
-      const promoData = promoDoc.data()!;
+    const promoData = promoDoc.data()!;
+    const codeType = promoData.type || 'single_use';
 
-      // Check if code is still valid (active or reserved codes can be redeemed)
-      if (promoData.status !== 'active' && promoData.status !== 'reserved') {
+    // Shared validation: status, expiration, max uses
+    if (promoData.status !== 'active' && promoData.status !== 'reserved') {
+      throw new HttpsError(
+        'failed-precondition',
+        promoData.status === 'used'
+          ? 'This code has already been used'
+          : 'This code is no longer valid'
+      );
+    }
+
+    if (promoData.expiresAt && promoData.expiresAt.toDate() < new Date()) {
+      await promoRef.update({ status: 'expired' });
+      throw new HttpsError('failed-precondition', 'This code has expired');
+    }
+
+    if (promoData.maxUses !== -1 && promoData.usedCount >= promoData.maxUses) {
+      await promoRef.update({ status: 'used' });
+      throw new HttpsError(
+        'failed-precondition',
+        'This code has reached its maximum uses'
+      );
+    }
+
+    // --- DISCOUNT CODE PATH ---
+    if (codeType === 'discount') {
+      // Check if user already purchased with this code
+      const existingTxn = await db
+        .collection('discountTransactions')
+        .where('promoCode', '==', normalizedCode)
+        .where('rcAppUserId', '==', userId)
+        .limit(1)
+        .get();
+
+      if (!existingTxn.empty) {
         throw new HttpsError(
           'failed-precondition',
-          promoData.status === 'used'
+          'You have already redeemed this code'
+        );
+      }
+
+      logger.info('Discount promo code validated', {
+        code: normalizedCode,
+        userId,
+        offeringId: promoData.offeringId,
+        authType: auth?.uid ? 'firebase' : 'anonymous_revenuecat',
+      });
+
+      return {
+        success: true,
+        type: 'discount',
+        offeringId: promoData.offeringId,
+      } as DiscountCodeResponse;
+    }
+
+    // --- GIFT/SUBSCRIPTION CODE PATH (existing behavior) ---
+    const result = await db.runTransaction(async (transaction) => {
+      // Re-read inside transaction for consistency
+      const txPromoDoc = await transaction.get(promoRef);
+      const txPromoData = txPromoDoc.data()!;
+
+      // Re-validate inside transaction
+      if (txPromoData.status !== 'active' && txPromoData.status !== 'reserved') {
+        throw new HttpsError(
+          'failed-precondition',
+          txPromoData.status === 'used'
             ? 'This code has already been used'
             : 'This code is no longer valid'
         );
       }
 
-      // Check if code has expired
-      if (promoData.expiresAt && promoData.expiresAt.toDate() < new Date()) {
-        transaction.update(promoRef, { status: 'expired' });
-        throw new HttpsError('failed-precondition', 'This code has expired');
-      }
-
-      // Check if already at max uses
-      if (promoData.usedCount >= promoData.maxUses) {
+      if (txPromoData.maxUses !== -1 && txPromoData.usedCount >= txPromoData.maxUses) {
         transaction.update(promoRef, { status: 'used' });
         throw new HttpsError(
           'failed-precondition',
@@ -90,7 +155,7 @@ export const redeemPromoCodeFunction = onCall({
       }
 
       // Check if this user already redeemed this code
-      const existingRedemption = (promoData.redemptions as PromoRedemption[] || []).find(
+      const existingRedemption = (txPromoData.redemptions as PromoRedemption[] || []).find(
         (r) => r.usedBy === userId && r.success
       );
       if (existingRedemption) {
@@ -102,17 +167,17 @@ export const redeemPromoCodeFunction = onCall({
 
       // Determine duration type for RevenueCat
       let durationParam: 'yearly' | 'lifetime' | 'monthly' = 'yearly';
-      if (promoData.durationDays >= 9999) {
+      if (txPromoData.durationDays >= 9999) {
         durationParam = 'lifetime';
-      } else if (promoData.durationDays <= 31) {
+      } else if (txPromoData.durationDays <= 31) {
         durationParam = 'monthly';
       }
 
       // Grant entitlement via RevenueCat
       const grantResult = await grantPromotionalEntitlement(
         revenueCatSecretKey.value(),
-        userId, // Firebase UID as RevenueCat app_user_id
-        promoData.entitlementId,
+        userId,
+        txPromoData.entitlementId,
         durationParam
       );
 
@@ -124,12 +189,15 @@ export const redeemPromoCodeFunction = onCall({
         errorMessage: grantResult.error || null,
       };
 
-      const newUsedCount = promoData.usedCount + 1;
-      const newStatus = newUsedCount >= promoData.maxUses ? 'used' : 'active';
+      const newUsedCount = txPromoData.usedCount + 1;
+      const newStatus =
+        txPromoData.maxUses !== -1 && newUsedCount >= txPromoData.maxUses
+          ? 'used'
+          : 'active';
 
       transaction.update(promoRef, {
         usedCount: newUsedCount,
-        status: grantResult.success ? newStatus : promoData.status,
+        status: grantResult.success ? newStatus : txPromoData.status,
         redemptions: admin.firestore.FieldValue.arrayUnion(redemption),
       });
 
@@ -142,9 +210,9 @@ export const redeemPromoCodeFunction = onCall({
 
       return {
         success: true,
-        entitlementId: promoData.entitlementId,
-        durationDays: promoData.durationDays,
-      };
+        entitlementId: txPromoData.entitlementId,
+        durationDays: txPromoData.durationDays,
+      } as GiftCodeResponse;
     });
 
     logger.info('Promo code redeemed successfully', {

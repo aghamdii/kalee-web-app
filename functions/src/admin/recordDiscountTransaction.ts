@@ -1,0 +1,178 @@
+import { onCall } from 'firebase-functions/v2/https';
+import * as admin from 'firebase-admin';
+import * as logger from 'firebase-functions/logger';
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+interface RecordDiscountTransactionRequest {
+  promoCode: string;
+  rcAppUserId: string;
+  firebaseUserId: string;
+  offeringId: string;
+  productIdentifier: string;
+  planType: 'annual' | 'monthly';
+  price: number;
+  currency: string;
+  platform: 'ios' | 'android';
+  initialStatus: 'trial' | 'paid';
+  trialStartedAt: string | null;
+  convertedAt: string | null;
+}
+
+export const recordDiscountTransactionFunction = onCall({
+  region: 'europe-west1',
+  timeoutSeconds: 60,
+  memory: '256MiB',
+}, async (request) => {
+  const data = (request.data || {}) as RecordDiscountTransactionRequest;
+
+  const {
+    promoCode,
+    rcAppUserId,
+    firebaseUserId,
+    offeringId,
+    productIdentifier,
+    planType,
+    price,
+    currency,
+    platform,
+    initialStatus,
+    trialStartedAt,
+    convertedAt,
+  } = data;
+
+  // Validate required fields (return gracefully — this is fire-and-forget)
+  if (!promoCode || !rcAppUserId || !planType || price == null || !currency || !platform || !initialStatus) {
+    logger.error('Missing required fields in recordDiscountTransaction', { promoCode, rcAppUserId, planType, price, currency, platform, initialStatus });
+    return { success: false };
+  }
+
+  try {
+    const db = admin.firestore();
+    const normalizedCode = promoCode.trim().toUpperCase();
+
+    // Check for duplicate transaction (idempotent — don't error)
+    const existingTxn = await db
+      .collection('discountTransactions')
+      .where('promoCode', '==', normalizedCode)
+      .where('rcAppUserId', '==', rcAppUserId)
+      .limit(1)
+      .get();
+
+    if (!existingTxn.empty) {
+      logger.info('Discount transaction already recorded', {
+        promoCode: normalizedCode,
+        rcAppUserId,
+        existingId: existingTxn.docs[0].id,
+      });
+      return {
+        success: true,
+        transactionId: existingTxn.docs[0].id,
+      };
+    }
+
+    // Look up promo code for affiliateId
+    const promoDoc = await db.collection('promoCodes').doc(normalizedCode).get();
+    const affiliateId = promoDoc.exists ? (promoDoc.data()?.affiliateId || null) : null;
+
+    if (!promoDoc.exists) {
+      logger.warn('Promo code not found when recording discount transaction', {
+        promoCode: normalizedCode,
+        rcAppUserId,
+      });
+    }
+
+    // Build initial statusHistory entry
+    const initialEvent = initialStatus === 'trial' ? 'trial_started' : 'paid';
+    const eventTimestamp = initialStatus === 'trial'
+      ? (trialStartedAt ? admin.firestore.Timestamp.fromDate(new Date(trialStartedAt)) : admin.firestore.Timestamp.now())
+      : (convertedAt ? admin.firestore.Timestamp.fromDate(new Date(convertedAt)) : admin.firestore.Timestamp.now());
+
+    // Create the discount transaction document
+    const transactionData = {
+      promoCode: normalizedCode,
+      affiliateId,
+      rcAppUserId,
+      firebaseUserId: firebaseUserId || '',
+      offeringId: offeringId || '',
+      productIdentifier: productIdentifier || '',
+      planType,
+      price,
+      currency,
+      platform,
+      status: initialStatus,
+      initialStatus,
+      trialStartedAt: trialStartedAt
+        ? admin.firestore.Timestamp.fromDate(new Date(trialStartedAt))
+        : null,
+      convertedAt: convertedAt
+        ? admin.firestore.Timestamp.fromDate(new Date(convertedAt))
+        : null,
+      statusHistory: [
+        {
+          event: initialEvent,
+          timestamp: eventTimestamp,
+          rcEventType: 'INITIAL_PURCHASE',
+        },
+      ],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      payoutId: null,
+    };
+
+    const txnRef = await db.collection('discountTransactions').add(transactionData);
+
+    // Update promo code usage (transaction for race safety)
+    if (promoDoc.exists) {
+      await db.runTransaction(async (transaction) => {
+        const freshPromoDoc = await transaction.get(
+          db.collection('promoCodes').doc(normalizedCode)
+        );
+        const promoData = freshPromoDoc.data()!;
+
+        const newUsedCount = promoData.usedCount + 1;
+        const shouldMarkUsed =
+          promoData.maxUses !== -1 && newUsedCount >= promoData.maxUses;
+
+        const redemption = {
+          usedBy: rcAppUserId,
+          usedAt: admin.firestore.Timestamp.now(),
+          success: true,
+          type: 'discount_purchase',
+          planType,
+          price,
+          currency,
+        };
+
+        transaction.update(freshPromoDoc.ref, {
+          usedCount: newUsedCount,
+          status: shouldMarkUsed ? 'used' : promoData.status,
+          redemptions: admin.firestore.FieldValue.arrayUnion(redemption),
+        });
+      });
+    }
+
+    logger.info('Discount transaction recorded successfully', {
+      transactionId: txnRef.id,
+      promoCode: normalizedCode,
+      rcAppUserId,
+      planType,
+      price,
+      currency,
+      initialStatus,
+    });
+
+    return {
+      success: true,
+      transactionId: txnRef.id,
+    };
+  } catch (error: unknown) {
+    logger.error('Error recording discount transaction:', error);
+    // Graceful response — purchase already succeeded, don't confuse the user
+    return {
+      success: false,
+    };
+  }
+});

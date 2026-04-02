@@ -1,15 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { listPromoCodes, generatePromoCode, reservePromoCode, unreservePromoCode } from '../../actions/admin-actions';
 
 interface PromoCode {
   id: string;
   code: string;
+  type: string;
   status: string;
-  entitlementId: string;
-  durationDays: number;
+  entitlementId: string | null;
+  durationDays: number | null;
+  offeringId: string | null;
+  affiliateId: string | null;
+  note: string | null;
   usedCount: number;
   maxUses: number;
   createdByEmail: string;
@@ -20,14 +25,27 @@ interface PromoCode {
 }
 
 export default function PromoCodesPage() {
+  const router = useRouter();
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [reservingCode, setReservingCode] = useState<string | null>(null);
   const [reserveInput, setReserveInput] = useState('');
   const [processingReserve, setProcessingReserve] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Create form state
+  const [createType, setCreateType] = useState<'single_use' | 'discount'>('single_use');
+  const [createCustomCode, setCreateCustomCode] = useState('');
+  const [createOfferingId, setCreateOfferingId] = useState('discounted_paywall_v1');
+  const [createMaxUses, setCreateMaxUses] = useState<string>('100');
+  const [createUnlimited, setCreateUnlimited] = useState(false);
+  const [createAffiliateId, setCreateAffiliateId] = useState('');
+  const [createNote, setCreateNote] = useState('');
+  const [createExpiresAt, setCreateExpiresAt] = useState('');
 
   const loadPromoCodes = async () => {
     setLoading(true);
@@ -35,6 +53,7 @@ export default function PromoCodesPage() {
       const result = await listPromoCodes({
         pageSize: 50,
         status: statusFilter || null,
+        type: typeFilter || null,
       });
 
       if (result.error) {
@@ -50,21 +69,19 @@ export default function PromoCodesPage() {
     }
   };
 
-  const handleGenerateCode = async () => {
+  const handleGenerateGiftCode = async () => {
     setGenerating(true);
     try {
       const result = await generatePromoCode({
+        type: 'single_use',
         entitlementId: 'Pro',
         durationDays: 365,
       });
 
       if (result.success && result.code) {
-        // Copy to clipboard
         await navigator.clipboard.writeText(result.code);
         setCopiedCode(result.code);
         setTimeout(() => setCopiedCode(null), 3000);
-
-        // Reload the list
         loadPromoCodes();
       } else {
         alert(`Failed to generate code: ${result.error}`);
@@ -75,6 +92,61 @@ export default function PromoCodesPage() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleCreateDiscountCode = async () => {
+    if (!createCustomCode.trim()) {
+      alert('Code is required for discount codes');
+      return;
+    }
+    if (!createOfferingId.trim()) {
+      alert('Offering ID is required');
+      return;
+    }
+    if (!createUnlimited && (!createMaxUses || parseInt(createMaxUses) < 1)) {
+      alert('Max uses must be at least 1');
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const result = await generatePromoCode({
+        type: 'discount',
+        customCode: createCustomCode.trim(),
+        offeringId: createOfferingId.trim(),
+        maxUses: createUnlimited ? -1 : parseInt(createMaxUses),
+        affiliateId: createAffiliateId.trim() || undefined,
+        note: createNote.trim() || undefined,
+        expiresAt: createExpiresAt || null,
+      });
+
+      if (result.success && result.code) {
+        await navigator.clipboard.writeText(result.code);
+        setCopiedCode(result.code);
+        setTimeout(() => setCopiedCode(null), 3000);
+        setShowCreateModal(false);
+        resetCreateForm();
+        loadPromoCodes();
+      } else {
+        alert(`Failed to create code: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating discount code:', error);
+      alert('Failed to create discount code');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const resetCreateForm = () => {
+    setCreateType('single_use');
+    setCreateCustomCode('');
+    setCreateOfferingId('discounted_paywall_v1');
+    setCreateMaxUses('100');
+    setCreateUnlimited(false);
+    setCreateAffiliateId('');
+    setCreateNote('');
+    setCreateExpiresAt('');
   };
 
   const copyToClipboard = async (code: string) => {
@@ -127,7 +199,7 @@ export default function PromoCodesPage() {
 
   useEffect(() => {
     loadPromoCodes();
-  }, [statusFilter]);
+  }, [statusFilter, typeFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -144,6 +216,20 @@ export default function PromoCodesPage() {
     }
   };
 
+  const getTypeLabel = (type: string) => {
+    return type === 'discount' ? 'Discount' : 'Gift';
+  };
+
+  const getTypeColor = (type: string) => {
+    return type === 'discount'
+      ? 'bg-purple-100 text-purple-800'
+      : 'bg-blue-100 text-blue-800';
+  };
+
+  const formatUsage = (usedCount: number, maxUses: number) => {
+    return `${usedCount} / ${maxUses === -1 ? 'unlimited' : maxUses}`;
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -158,7 +244,17 @@ export default function PromoCodesPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Promo Codes</h2>
 
-        <div className="flex gap-4 w-full sm:w-auto">
+        <div className="flex gap-3 w-full sm:w-auto">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          >
+            <option value="">All Types</option>
+            <option value="single_use">Gift Codes</option>
+            <option value="discount">Discount Codes</option>
+          </select>
+
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -172,11 +268,19 @@ export default function PromoCodesPage() {
           </select>
 
           <Button
-            onClick={handleGenerateCode}
+            onClick={handleGenerateGiftCode}
             disabled={generating}
-            className="bg-green-600 hover:bg-green-700"
+            variant="outline"
+            className="border-green-600 text-green-600 hover:bg-green-50"
           >
-            {generating ? 'Generating...' : 'Generate Code'}
+            {generating ? 'Generating...' : 'Gift Code'}
+          </Button>
+
+          <Button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            Discount Code
           </Button>
         </div>
       </div>
@@ -184,7 +288,7 @@ export default function PromoCodesPage() {
       {copiedCode && (
         <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex items-center gap-2">
-            <span className="text-green-800 font-medium">Code generated and copied:</span>
+            <span className="text-green-800 font-medium">Code created and copied:</span>
             <code className="bg-green-100 px-2 py-1 rounded font-mono">{copiedCode}</code>
           </div>
         </div>
@@ -204,22 +308,22 @@ export default function PromoCodesPage() {
                     Code
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Entitlement
+                    Usage
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Duration
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Uses
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Created By
+                    Affiliate / Note
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Expires
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
@@ -230,7 +334,7 @@ export default function PromoCodesPage() {
                 {promoCodes.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                      No promo codes found. Generate one to get started.
+                      No promo codes found.
                     </td>
                   </tr>
                 ) : (
@@ -240,11 +344,16 @@ export default function PromoCodesPage() {
                         {promo.code}
                       </td>
                       <td className="px-6 py-4 text-sm">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(promo.type)}`}
+                        >
+                          {getTypeLabel(promo.type)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
                         <div className="flex flex-col gap-1">
                           <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(
-                              promo.status
-                            )}`}
+                            className={`px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(promo.status)}`}
                           >
                             {promo.status}
                           </span>
@@ -255,14 +364,17 @@ export default function PromoCodesPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{promo.entitlementId}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{promo.durationDays} days</td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {promo.usedCount} / {promo.maxUses}
+                        {formatUsage(promo.usedCount, promo.maxUses)}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{promo.createdByEmail}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px] truncate">
+                        {promo.note || promo.affiliateId || '-'}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {formatDate(promo.createdAt)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {formatDate(promo.expiresAt)}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <div className="flex gap-2">
@@ -270,12 +382,21 @@ export default function PromoCodesPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => copyToClipboard(promo.code)}
-                            disabled={promo.status === 'used' || promo.status === 'expired'}
                             className="text-green-600 hover:text-green-700"
                           >
                             {copiedCode === promo.code ? 'Copied!' : 'Copy'}
                           </Button>
-                          {promo.status === 'active' && (
+                          {promo.type === 'discount' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => router.push(`/admin_portal/dashboard/promo-codes/${promo.code}`)}
+                              className="text-purple-600 hover:text-purple-700"
+                            >
+                              View
+                            </Button>
+                          )}
+                          {promo.type === 'single_use' && promo.status === 'active' && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -339,6 +460,127 @@ export default function PromoCodesPage() {
                 className="bg-yellow-600 hover:bg-yellow-700"
               >
                 {processingReserve ? 'Reserving...' : 'Reserve'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Discount Code Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { setShowCreateModal(false); resetCreateForm(); }} />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-900 mb-6">Create Discount Code</h3>
+
+            <div className="space-y-4">
+              {/* Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={createCustomCode}
+                  onChange={(e) => setCreateCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                  placeholder="e.g., AHMED20"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">Letters, numbers, and underscores only</p>
+              </div>
+
+              {/* Offering ID */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Offering ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={createOfferingId}
+                  onChange={(e) => setCreateOfferingId(e.target.value)}
+                  placeholder="discounted_paywall_v1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Max Uses */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Uses <span className="text-red-500">*</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    value={createUnlimited ? '' : createMaxUses}
+                    onChange={(e) => setCreateMaxUses(e.target.value)}
+                    disabled={createUnlimited}
+                    min="1"
+                    placeholder="100"
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+                  />
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={createUnlimited}
+                      onChange={(e) => setCreateUnlimited(e.target.checked)}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    Unlimited
+                  </label>
+                </div>
+              </div>
+
+              {/* Affiliate ID */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Affiliate ID</label>
+                <input
+                  type="text"
+                  value={createAffiliateId}
+                  onChange={(e) => setCreateAffiliateId(e.target.value)}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <input
+                  type="text"
+                  value={createNote}
+                  onChange={(e) => setCreateNote(e.target.value)}
+                  placeholder="e.g., Ahmed - YouTube, March 2026"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Expires At */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expires At</label>
+                <input
+                  type="date"
+                  value={createExpiresAt}
+                  onChange={(e) => setCreateExpiresAt(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave empty for no expiration</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6">
+              <Button
+                variant="outline"
+                onClick={() => { setShowCreateModal(false); resetCreateForm(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateDiscountCode}
+                disabled={generating || !createCustomCode.trim() || !createOfferingId.trim()}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {generating ? 'Creating...' : 'Create Code'}
               </Button>
             </div>
           </div>

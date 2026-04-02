@@ -213,51 +213,101 @@ function generateSimpleCode(): string {
 }
 
 export async function generatePromoCode(options: {
+  type: 'single_use' | 'discount';
+  // Gift code fields
   entitlementId?: string;
   durationDays?: number;
+  // Discount code fields
+  offeringId?: string;
+  affiliateId?: string;
+  note?: string;
+  // Shared fields
+  customCode?: string;
+  maxUses?: number;
+  expiresAt?: string | null;
 }): Promise<{ success: boolean; code?: string; error?: string }> {
   const admin = await verifyAdmin();
   if (!admin) {
     return { success: false, error: 'Unauthorized' };
   }
 
-  const { entitlementId = 'Pro', durationDays = 365 } = options;
+  const {
+    type = 'single_use',
+    entitlementId = 'Pro',
+    durationDays = 365,
+    offeringId,
+    affiliateId,
+    note,
+    customCode,
+    maxUses,
+    expiresAt,
+  } = options;
+
+  // Validate discount-specific requirements
+  if (type === 'discount') {
+    if (!offeringId) {
+      return { success: false, error: 'Offering ID is required for discount codes' };
+    }
+    if (maxUses === undefined) {
+      return { success: false, error: 'Max uses is required for discount codes' };
+    }
+  }
 
   try {
     const { db } = getFirebaseAdmin();
 
-    // Generate unique code - check for duplicates
     let code = '';
-    let attempts = 0;
-    const maxAttempts = 10;
 
-    do {
-      code = generateSimpleCode();
+    if (customCode) {
+      // Use custom code (normalize to uppercase, alphanumeric + underscores)
+      code = customCode.trim().toUpperCase();
+      if (!/^[A-Z0-9_]+$/.test(code)) {
+        return { success: false, error: 'Code must be alphanumeric (letters, numbers, underscores only)' };
+      }
       const existing = await db.collection('promoCodes').doc(code).get();
-      if (!existing.exists) break;
-      attempts++;
-    } while (attempts < maxAttempts);
+      if (existing.exists) {
+        return { success: false, error: `Code "${code}" already exists` };
+      }
+    } else {
+      // Auto-generate unique code
+      let attempts = 0;
+      const maxAttempts = 10;
+      do {
+        code = generateSimpleCode();
+        const existing = await db.collection('promoCodes').doc(code).get();
+        if (!existing.exists) break;
+        attempts++;
+      } while (attempts < maxAttempts);
 
-    if (attempts >= maxAttempts) {
-      return { success: false, error: 'Failed to generate unique code' };
+      if (attempts >= maxAttempts) {
+        return { success: false, error: 'Failed to generate unique code' };
+      }
     }
 
     const now = new Date();
 
-    const promoCode = {
+    // Build document based on type
+    const promoCode: Record<string, unknown> = {
       code,
-      type: 'single_use',
-      maxUses: 1,
+      type,
+      maxUses: type === 'single_use' ? 1 : maxUses!,
       usedCount: 0,
-      entitlementId,
-      durationDays,
       status: 'active',
       createdBy: admin.uid,
       createdByEmail: admin.email,
       createdAt: now,
-      expiresAt: null,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
       redemptions: [],
     };
+
+    if (type === 'single_use') {
+      promoCode.entitlementId = entitlementId;
+      promoCode.durationDays = durationDays;
+    } else {
+      promoCode.offeringId = offeringId;
+      promoCode.affiliateId = affiliateId || null;
+      promoCode.note = note || null;
+    }
 
     await db.collection('promoCodes').doc(code).set(promoCode);
 
@@ -266,7 +316,13 @@ export async function generatePromoCode(options: {
       action: 'promo_code_generated',
       adminId: admin.uid,
       adminEmail: admin.email,
-      details: { code, entitlementId, durationDays },
+      details: {
+        code,
+        type,
+        ...(type === 'single_use'
+          ? { entitlementId, durationDays }
+          : { offeringId, affiliateId, note, maxUses }),
+      },
       timestamp: now,
     });
 
@@ -365,13 +421,18 @@ export async function unreservePromoCode(code: string): Promise<{ success: boole
 export async function listPromoCodes(options: {
   pageSize?: number;
   status?: string | null;
+  type?: string | null;
 }): Promise<{
   promoCodes: Array<{
     id: string;
     code: string;
+    type: string;
     status: string;
-    entitlementId: string;
-    durationDays: number;
+    entitlementId: string | null;
+    durationDays: number | null;
+    offeringId: string | null;
+    affiliateId: string | null;
+    note: string | null;
     usedCount: number;
     maxUses: number;
     createdByEmail: string;
@@ -387,11 +448,11 @@ export async function listPromoCodes(options: {
     return { promoCodes: [], error: 'Unauthorized' };
   }
 
-  const { pageSize = 50, status } = options;
+  const { pageSize = 50, status, type } = options;
 
   try {
     const { db } = getFirebaseAdmin();
-    let query = db.collection('promoCodes').orderBy('createdAt', 'desc').limit(pageSize);
+    let query: FirebaseFirestore.Query = db.collection('promoCodes').orderBy('createdAt', 'desc').limit(pageSize);
 
     if (status) {
       query = db
@@ -403,14 +464,18 @@ export async function listPromoCodes(options: {
 
     const snapshot = await query.get();
 
-    const promoCodes = snapshot.docs.map((doc) => {
+    let promoCodes = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
         code: data.code,
+        type: data.type || 'single_use',
         status: data.status,
-        entitlementId: data.entitlementId,
-        durationDays: data.durationDays,
+        entitlementId: data.entitlementId || null,
+        durationDays: data.durationDays ?? null,
+        offeringId: data.offeringId || null,
+        affiliateId: data.affiliateId || null,
+        note: data.note || null,
         usedCount: data.usedCount,
         maxUses: data.maxUses,
         createdByEmail: data.createdByEmail,
@@ -420,6 +485,11 @@ export async function listPromoCodes(options: {
         reservedBy: data.reservedBy || null,
       };
     });
+
+    // Filter by type client-side (avoids composite index requirement)
+    if (type) {
+      promoCodes = promoCodes.filter((p) => p.type === type);
+    }
 
     return { promoCodes };
   } catch (error) {
@@ -1184,6 +1254,143 @@ export async function getUserInsight(userId: string): Promise<{
   } catch (error) {
     console.error('Error fetching user insight:', error);
     return { insight: null, error: 'Failed to fetch insight' };
+  }
+}
+
+// List discount transactions for a specific promo code
+export async function listDiscountTransactions(options: {
+  promoCode: string;
+  pageSize?: number;
+  lastDocId?: string | null;
+  statusFilter?: string | null;
+  planTypeFilter?: string | null;
+  platformFilter?: string | null;
+}): Promise<{
+  transactions: Array<{
+    id: string;
+    promoCode: string;
+    rcAppUserId: string;
+    firebaseUserId: string;
+    planType: string;
+    price: number;
+    currency: string;
+    platform: string;
+    status: string;
+    initialStatus: string;
+    trialStartedAt: string | null;
+    convertedAt: string | null;
+    createdAt: string | null;
+  }>;
+  summary: {
+    totalUsers: number;
+    trialActive: number;
+    convertedPaid: number;
+    monthlyPaid: number;
+    totalRevenue: Record<string, number>; // keyed by currency
+  };
+  hasMore: boolean;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return {
+      transactions: [],
+      summary: { totalUsers: 0, trialActive: 0, convertedPaid: 0, monthlyPaid: 0, totalRevenue: {} },
+      hasMore: false,
+      error: 'Unauthorized',
+    };
+  }
+
+  const { promoCode, pageSize = 50, lastDocId, statusFilter, planTypeFilter, platformFilter } = options;
+
+  try {
+    const { db } = getFirebaseAdmin();
+
+    // Fetch all transactions for this promo code (for summary calculation)
+    const allSnapshot = await db
+      .collection('discountTransactions')
+      .where('promoCode', '==', promoCode.toUpperCase())
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    // Compute summary from all transactions
+    let trialActive = 0;
+    let convertedPaid = 0;
+    let monthlyPaid = 0;
+    const totalRevenue: Record<string, number> = {};
+
+    const allDocs = allSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      const status = data.status as string;
+      const initialStatus = data.initialStatus as string;
+      const planType = data.planType as string;
+      const price = data.price as number;
+      const currency = data.currency as string;
+
+      if (status === 'trial') trialActive++;
+      if (status === 'paid' && initialStatus === 'trial') convertedPaid++;
+      if (status === 'paid' && planType === 'monthly') monthlyPaid++;
+      if (status === 'paid') {
+        totalRevenue[currency] = (totalRevenue[currency] || 0) + price;
+      }
+
+      return {
+        id: doc.id,
+        promoCode: data.promoCode,
+        rcAppUserId: data.rcAppUserId || '',
+        firebaseUserId: data.firebaseUserId || '',
+        planType: data.planType || '',
+        price: data.price || 0,
+        currency: data.currency || '',
+        platform: data.platform || '',
+        status: data.status || '',
+        initialStatus: data.initialStatus || '',
+        trialStartedAt: data.trialStartedAt?.toDate?.()?.toISOString() || null,
+        convertedAt: data.convertedAt?.toDate?.()?.toISOString() || null,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    // Apply client-side filters
+    let filtered = allDocs;
+    if (statusFilter) {
+      filtered = filtered.filter((t) => t.status === statusFilter);
+    }
+    if (planTypeFilter) {
+      filtered = filtered.filter((t) => t.planType === planTypeFilter);
+    }
+    if (platformFilter) {
+      filtered = filtered.filter((t) => t.platform === platformFilter);
+    }
+
+    // Apply pagination
+    let startIndex = 0;
+    if (lastDocId) {
+      const idx = filtered.findIndex((t) => t.id === lastDocId);
+      if (idx !== -1) startIndex = idx + 1;
+    }
+
+    const paginated = filtered.slice(startIndex, startIndex + pageSize);
+
+    return {
+      transactions: paginated,
+      summary: {
+        totalUsers: allSnapshot.size,
+        trialActive,
+        convertedPaid,
+        monthlyPaid,
+        totalRevenue,
+      },
+      hasMore: startIndex + pageSize < filtered.length,
+    };
+  } catch (error) {
+    console.error('Error listing discount transactions:', error);
+    return {
+      transactions: [],
+      summary: { totalUsers: 0, trialActive: 0, convertedPaid: 0, monthlyPaid: 0, totalRevenue: {} },
+      hasMore: false,
+      error: 'Failed to list discount transactions',
+    };
   }
 }
 

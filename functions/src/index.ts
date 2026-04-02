@@ -29,5 +29,7 @@ export { sendScheduledNotification } from './notifications/sendScheduledNotifica
 
 // ADMIN FUNCTIONS
 export { redeemPromoCodeFunction } from './admin/redeemPromoCode';
+export { recordDiscountTransactionFunction } from './admin/recordDiscountTransaction';
+export { updateDiscountTransactionStatusFunction } from './admin/updateDiscountTransactionStatus';
 export { sendBulkNotificationFunction } from './admin/sendBulkNotification';
 export { syncRevenueCatDataFunction } from './admin/syncRevenueCatData';
