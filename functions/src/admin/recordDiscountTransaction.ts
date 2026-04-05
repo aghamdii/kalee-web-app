@@ -27,7 +27,14 @@ export const recordDiscountTransactionFunction = onCall({
   timeoutSeconds: 60,
   memory: '256MiB',
 }, async (request) => {
-  const data = (request.data || {}) as RecordDiscountTransactionRequest;
+  const { auth, data } = request;
+
+  // Require authentication — either Firebase Auth or appUserId
+  const userId = auth?.uid || (data as RecordDiscountTransactionRequest)?.rcAppUserId;
+  if (!userId) {
+    logger.error('Unauthenticated call to recordDiscountTransaction');
+    return { success: false };
+  }
 
   const {
     promoCode,
@@ -42,12 +49,24 @@ export const recordDiscountTransactionFunction = onCall({
     initialStatus,
     trialStartedAt,
     convertedAt,
-  } = data;
+  } = (data || {}) as RecordDiscountTransactionRequest;
 
   // Validate required fields (return gracefully — this is fire-and-forget)
   if (!promoCode || !rcAppUserId || !planType || price == null || !currency || !platform || !initialStatus) {
     logger.error('Missing required fields in recordDiscountTransaction', { promoCode, rcAppUserId, planType, price, currency, platform, initialStatus });
     return { success: false };
+  }
+
+  // Verify the promo code exists and is a discount code
+  try {
+    const db = admin.firestore();
+    const promoDoc = await db.collection('promoCodes').doc(promoCode.trim().toUpperCase()).get();
+    if (promoDoc.exists && promoDoc.data()?.type !== 'discount') {
+      logger.error('Attempted to record discount transaction for non-discount code', { promoCode, userId });
+      return { success: false };
+    }
+  } catch {
+    // Don't block on this check — still allow the transaction to be recorded
   }
 
   try {

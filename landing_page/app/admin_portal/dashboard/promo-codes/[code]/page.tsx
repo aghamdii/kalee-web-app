@@ -168,9 +168,12 @@ export default function PromoCodeDetailPage({ params }: { params: Promise<{ code
       .join(' + ');
   };
 
-  const truncateId = (id: string) => {
-    if (id.length <= 16) return id;
-    return `${id.substring(0, 8)}...${id.substring(id.length - 6)}`;
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
   };
 
   return (
@@ -295,8 +298,12 @@ export default function PromoCodeDetailPage({ params }: { params: Promise<{ code
                   ) : (
                     transactions.map((txn) => (
                       <tr key={txn.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm font-mono text-gray-700">
-                          {truncateId(txn.firebaseUserId || txn.rcAppUserId)}
+                        <td
+                          className="px-6 py-4 text-sm font-mono text-gray-700 cursor-pointer hover:text-gray-900 break-all max-w-[280px]"
+                          title="Click to copy"
+                          onClick={() => copyToClipboard(txn.firebaseUserId || txn.rcAppUserId)}
+                        >
+                          {txn.firebaseUserId || txn.rcAppUserId}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500 capitalize">
                           {txn.planType}
