@@ -4,6 +4,37 @@ All notable changes to the Kalee Web App project are documented in this file.
 
 ---
 
+## [2026-04-20] — Affiliate Transactions Ledger & Settlement Operations
+
+Shifted affiliate tracking from Flutter-driven to server-driven. New `affiliateTransactions` collection is the source of truth, populated by a Firestore trigger on RevenueCat events. Admin portal gets settlement + payouts UI.
+
+### Cloud Functions
+
+- **New `affiliateTransactionsListener`** — Firestore trigger on `revenuecatSubscriptionEvents`. Creates one `affiliateTransactions` doc per commissionable event (INITIAL_PURCHASE, RENEWAL, PRODUCT_CHANGE), updates existing doc on REFUND with clawback flagging. Uses `rcEventId` as doc ID for idempotency. Increments `promoCodes.usedCount` only on INITIAL_PURCHASE.
+- **`recordDiscountTransaction`** — added auth check + discount-type validation. Removed `usedCount` increment (listener handles it now). Kept alive as legacy safety net.
+
+### Admin Portal
+
+- **New actions:** `listAffiliateTransactions` (with summary + filters), `bulkSettleAffiliateTransactions`, `listPayouts`, `getPayoutDetails`, `markPayoutAsPaid`, `listEventsByDiscountCode`.
+- **`listPromoCodes`** — discount codes now show live usage count via Firestore `count()` aggregation against `affiliateTransactions`.
+- **Promo code detail page** — rewritten with 3 tabs (Transactions / RevenueCat Events / Payouts), summary strip, date-range + status filters, row selection with running totals, settle modal with editable commission rate, payout details with Mark-as-Paid, clawback banner.
+
+### Firestore
+
+- **New `affiliateTransactions`** — ledger collection, one doc per commissionable event. Captures source linkage (rcEventId, rcTransactionId), pricing (local + USD), refund state, settlement state (payoutId, isClawback).
+- **New `payouts`** — settlement batches. Links to `affiliateTransactions` via `transactionIds[]`.
+
+### Bug Fixes
+
+- **Double-counted `usedCount`** — previously incremented twice (Flutter + listener). Now only the listener increments.
+- **`recordDiscountTransaction` security** — was unauthenticated; now requires auth and validates code type.
+
+### Parallel-run Strategy
+
+Legacy flow (Flutter → `recordDiscountTransaction` → `discountTransactions`) remains active as a safety net. Admin portal reads exclusively from new `affiliateTransactions`. Legacy flow can be removed once verified across a full payout cycle.
+
+---
+
 ## [2026-04-01] — Discount / Affiliate Promo Codes
 
 ### Cloud Functions

@@ -464,6 +464,7 @@ export async function listPromoCodes(options: {
 
     const snapshot = await query.get();
 
+    // Build base list
     let promoCodes = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
@@ -476,7 +477,7 @@ export async function listPromoCodes(options: {
         offeringId: data.offeringId || null,
         affiliateId: data.affiliateId || null,
         note: data.note || null,
-        usedCount: data.usedCount,
+        usedCount: data.usedCount ?? 0,
         maxUses: data.maxUses,
         createdByEmail: data.createdByEmail,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
@@ -485,6 +486,33 @@ export async function listPromoCodes(options: {
         reservedBy: data.reservedBy || null,
       };
     });
+
+    // For discount codes, derive usedCount live from affiliateTransactions count()
+    // (counts unique INITIAL_PURCHASE events — i.e. unique users who purchased).
+    // count() aggregations are server-side and don't read full documents.
+    const discountCodes = promoCodes.filter((p) => p.type === 'discount');
+    if (discountCodes.length > 0) {
+      const counts = await Promise.all(
+        discountCodes.map(async (p) => {
+          try {
+            const aggSnap = await db
+              .collection('affiliateTransactions')
+              .where('promoCode', '==', p.code)
+              .where('transactionType', '==', 'initial_purchase')
+              .count()
+              .get();
+            return { code: p.code, count: aggSnap.data().count };
+          } catch (err) {
+            console.error('count() failed for code', p.code, err);
+            return { code: p.code, count: p.usedCount }; // fall back to stored value
+          }
+        }),
+      );
+      const countMap = new Map(counts.map((c) => [c.code, c.count]));
+      promoCodes = promoCodes.map((p) =>
+        p.type === 'discount' ? { ...p, usedCount: countMap.get(p.code) ?? p.usedCount } : p,
+      );
+    }
 
     // Filter by type client-side (avoids composite index requirement)
     if (type) {
@@ -1280,6 +1308,11 @@ export async function listDiscountTransactions(options: {
     trialStartedAt: string | null;
     convertedAt: string | null;
     createdAt: string | null;
+    statusHistory: Array<{
+      event: string;
+      timestamp: string | null;
+      rcEventType: string;
+    }>;
   }>;
   summary: {
     totalUsers: number;
@@ -1348,6 +1381,11 @@ export async function listDiscountTransactions(options: {
         trialStartedAt: data.trialStartedAt?.toDate?.()?.toISOString() || null,
         convertedAt: data.convertedAt?.toDate?.()?.toISOString() || null,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        statusHistory: (data.statusHistory || []).map((entry: { event?: string; timestamp?: { toDate?: () => Date }; rcEventType?: string }) => ({
+          event: entry.event || '',
+          timestamp: entry.timestamp?.toDate?.()?.toISOString() || null,
+          rcEventType: entry.rcEventType || '',
+        })),
       };
     });
 
@@ -1391,6 +1429,603 @@ export async function listDiscountTransactions(options: {
       hasMore: false,
       error: 'Failed to list discount transactions',
     };
+  }
+}
+
+// ============================================================================
+// AFFILIATE TRANSACTIONS (new collection — server-driven from RevenueCat events)
+// ============================================================================
+
+export interface AffiliateTransactionRow {
+  id: string;
+  rcEventId: string;
+  rcTransactionId: string | null;
+  originalTransactionId: string | null;
+  rcAppUserId: string;
+  firebaseUserId: string;
+  promoCode: string;
+  affiliateId: string | null;
+  transactionType: string;
+  isTrialConversion: boolean;
+  isDiscountedProduct: boolean;
+  periodType: string;
+  renewalNumber: number | null;
+  productIdentifier: string;
+  offeringId: string | null;
+  planType: string;
+  platform: string;
+  store: string;
+  environment: string;
+  price: number;
+  currency: string;
+  priceUsd: number;
+  commissionPercentage: number | null;
+  takehomePercentage: number | null;
+  taxPercentage: number | null;
+  countryCode: string | null;
+  isTrial: boolean;
+  isPaidTransaction: boolean;
+  isRefunded: boolean;
+  priceUsdRefunded: number;
+  refundedAt: string | null;
+  refundEventId: string | null;
+  payoutId: string | null;
+  settledAt: string | null;
+  settledBy: string | null;
+  isClawback: boolean;
+  purchasedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string | null;
+}
+
+export interface AffiliateTransactionsSummary {
+  totalCharges: number;
+  trialsActive: number;
+  convertedPaid: number;
+  initialPaid: number;
+  renewals: number;
+  lifetimeRevenueUsd: number;
+  lifetimeRevenueByCurrency: Record<string, number>;
+  readyToSettleUsd: number;
+  settledUsd: number;
+  clawbackUsd: number;
+  clawbackCount: number;
+  refundedUsd: number;
+}
+
+const REFUND_WINDOW_DAYS = 45;
+
+function mapAffiliateTransactionDoc(
+  doc: FirebaseFirestore.QueryDocumentSnapshot,
+): AffiliateTransactionRow {
+  const d = doc.data();
+  return {
+    id: doc.id,
+    rcEventId: d.rcEventId || doc.id,
+    rcTransactionId: d.rcTransactionId || null,
+    originalTransactionId: d.originalTransactionId || null,
+    rcAppUserId: d.rcAppUserId || '',
+    firebaseUserId: d.firebaseUserId || '',
+    promoCode: d.promoCode || '',
+    affiliateId: d.affiliateId || null,
+    transactionType: d.transactionType || '',
+    isTrialConversion: d.isTrialConversion === true,
+    isDiscountedProduct: d.isDiscountedProduct === true,
+    periodType: d.periodType || '',
+    renewalNumber: d.renewalNumber ?? null,
+    productIdentifier: d.productIdentifier || '',
+    offeringId: d.offeringId || null,
+    planType: d.planType || '',
+    platform: d.platform || '',
+    store: d.store || '',
+    environment: d.environment || '',
+    price: d.price ?? 0,
+    currency: d.currency || '',
+    priceUsd: d.priceUsd ?? 0,
+    commissionPercentage: d.commissionPercentage ?? null,
+    takehomePercentage: d.takehomePercentage ?? null,
+    taxPercentage: d.taxPercentage ?? null,
+    countryCode: d.countryCode || null,
+    isTrial: d.isTrial === true,
+    isPaidTransaction: d.isPaidTransaction === true,
+    isRefunded: d.isRefunded === true,
+    priceUsdRefunded: d.priceUsdRefunded ?? 0,
+    refundedAt: d.refundedAt?.toDate?.()?.toISOString() || null,
+    refundEventId: d.refundEventId || null,
+    payoutId: d.payoutId || null,
+    settledAt: d.settledAt?.toDate?.()?.toISOString() || null,
+    settledBy: d.settledBy || null,
+    isClawback: d.isClawback === true,
+    purchasedAt: d.purchasedAt?.toDate?.()?.toISOString() || null,
+    expiresAt: d.expiresAt?.toDate?.()?.toISOString() || null,
+    createdAt: d.createdAt?.toDate?.()?.toISOString() || null,
+  };
+}
+
+/**
+ * NOTE: settlementState is a pure helper used in UI as well. It's duplicated
+ * inline in the client component since 'use server' files can only export
+ * async functions. Server-side summaries in listAffiliateTransactions use this
+ * via an inline copy below.
+ */
+function _settlementState(txn: {
+  payoutId: string | null;
+  isClawback: boolean;
+  isRefunded: boolean;
+  isPaidTransaction: boolean;
+  purchasedAt: string | null;
+}): string {
+  if (txn.payoutId) return txn.isClawback ? 'clawback' : 'settled';
+  if (txn.isRefunded) return 'refunded';
+  if (!txn.isPaidTransaction) return 'not_eligible';
+
+  const purchased = txn.purchasedAt ? new Date(txn.purchasedAt) : null;
+  if (!purchased) return 'not_eligible';
+  const ageDays = (Date.now() - purchased.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays < REFUND_WINDOW_DAYS) return 'in_window';
+  return 'ready';
+}
+
+export async function listAffiliateTransactions(options: {
+  promoCode: string;
+  pageSize?: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  transactionType?: string | null;
+  settlementFilter?: string | null;
+  planType?: string | null;
+  platform?: string | null;
+  discountedProductOnly?: boolean;
+}): Promise<{
+  transactions: AffiliateTransactionRow[];
+  summary: AffiliateTransactionsSummary;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return {
+      transactions: [],
+      summary: {
+        totalCharges: 0, trialsActive: 0, convertedPaid: 0, initialPaid: 0, renewals: 0,
+        lifetimeRevenueUsd: 0, lifetimeRevenueByCurrency: {},
+        readyToSettleUsd: 0, settledUsd: 0, clawbackUsd: 0, clawbackCount: 0, refundedUsd: 0,
+      },
+      error: 'Unauthorized',
+    };
+  }
+
+  const {
+    promoCode, pageSize = 200,
+    startDate, endDate,
+    transactionType, settlementFilter,
+    planType, platform, discountedProductOnly,
+  } = options;
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const normalizedCode = promoCode.trim().toUpperCase();
+
+    // Fetch all for this code so summary is accurate; paginate client-side
+    const snapshot = await db
+      .collection('affiliateTransactions')
+      .where('promoCode', '==', normalizedCode)
+      .orderBy('purchasedAt', 'desc')
+      .limit(1000)
+      .get();
+
+    const allRows = snapshot.docs.map(mapAffiliateTransactionDoc);
+
+    // Compute summary from ALL rows (pre-filter) — summary reflects the code's total activity
+    let trialsActive = 0;
+    let convertedPaid = 0;
+    let initialPaid = 0;
+    let renewals = 0;
+    let lifetimeRevenueUsd = 0;
+    const lifetimeRevenueByCurrency: Record<string, number> = {};
+    let readyToSettleUsd = 0;
+    let settledUsd = 0;
+    let clawbackUsd = 0;
+    let clawbackCount = 0;
+    let refundedUsd = 0;
+
+    for (const t of allRows) {
+      // Trial active = this is the initial trial doc and not yet converted/expired via another doc
+      if (t.transactionType === 'initial_purchase' && t.isTrial) trialsActive++;
+      if (t.transactionType === 'trial_conversion') convertedPaid++;
+      if (t.transactionType === 'initial_purchase' && !t.isTrial) initialPaid++;
+      if (t.transactionType === 'renewal') renewals++;
+
+      if (t.isPaidTransaction && !t.isRefunded) {
+        lifetimeRevenueUsd += t.priceUsd;
+        lifetimeRevenueByCurrency[t.currency] =
+          (lifetimeRevenueByCurrency[t.currency] || 0) + t.price;
+      }
+
+      if (t.isRefunded) refundedUsd += t.priceUsdRefunded;
+      if (t.isClawback) {
+        clawbackUsd += t.priceUsdRefunded;
+        clawbackCount++;
+      }
+
+      const state = _settlementState(t);
+      if (state === 'ready') readyToSettleUsd += t.priceUsd;
+      if (state === 'settled') settledUsd += t.priceUsd;
+    }
+
+    const summary: AffiliateTransactionsSummary = {
+      totalCharges: allRows.length,
+      trialsActive, convertedPaid, initialPaid, renewals,
+      lifetimeRevenueUsd, lifetimeRevenueByCurrency,
+      readyToSettleUsd, settledUsd, clawbackUsd, clawbackCount, refundedUsd,
+    };
+
+    // Apply filters for the returned transactions
+    let filtered = allRows;
+
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      filtered = filtered.filter((t) =>
+        t.purchasedAt ? new Date(t.purchasedAt).getTime() >= start : false
+      );
+    }
+    if (endDate) {
+      const end = new Date(endDate).getTime() + 24 * 60 * 60 * 1000; // inclusive end-of-day
+      filtered = filtered.filter((t) =>
+        t.purchasedAt ? new Date(t.purchasedAt).getTime() <= end : false
+      );
+    }
+    if (transactionType) {
+      filtered = filtered.filter((t) => t.transactionType === transactionType);
+    }
+    if (planType) filtered = filtered.filter((t) => t.planType === planType);
+    if (platform) filtered = filtered.filter((t) => t.platform === platform);
+    if (discountedProductOnly) filtered = filtered.filter((t) => t.isDiscountedProduct);
+    if (settlementFilter) {
+      filtered = filtered.filter((t) => _settlementState(t) === settlementFilter);
+    }
+
+    return {
+      transactions: filtered.slice(0, pageSize),
+      summary,
+    };
+  } catch (error) {
+    console.error('Error listing affiliate transactions:', error);
+    return {
+      transactions: [],
+      summary: {
+        totalCharges: 0, trialsActive: 0, convertedPaid: 0, initialPaid: 0, renewals: 0,
+        lifetimeRevenueUsd: 0, lifetimeRevenueByCurrency: {},
+        readyToSettleUsd: 0, settledUsd: 0, clawbackUsd: 0, clawbackCount: 0, refundedUsd: 0,
+      },
+      error: 'Failed to list affiliate transactions',
+    };
+  }
+}
+
+export async function bulkSettleAffiliateTransactions(options: {
+  transactionIds: string[];
+  promoCode: string;
+  affiliateId: string | null;
+  commissionRate: number;
+  note?: string;
+}): Promise<{ success: boolean; payoutId?: string; error?: string }> {
+  const admin = await verifyAdmin();
+  if (!admin) return { success: false, error: 'Unauthorized' };
+
+  const { transactionIds, promoCode, affiliateId, commissionRate, note } = options;
+
+  if (!transactionIds || transactionIds.length === 0) {
+    return { success: false, error: 'No transactions selected' };
+  }
+  if (commissionRate < 0 || commissionRate > 1) {
+    return { success: false, error: 'Commission rate must be between 0 and 1' };
+  }
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const payoutRef = db.collection('payouts').doc();
+    const txnRefs = transactionIds.map((id) => db.collection('affiliateTransactions').doc(id));
+    const now = new Date();
+
+    await db.runTransaction(async (trx) => {
+      const txnDocs = await Promise.all(txnRefs.map((ref) => trx.get(ref)));
+
+      let grossUsd = 0;
+      const totalsByCurrency: Record<string, number> = {};
+      let count = 0;
+
+      for (const snap of txnDocs) {
+        if (!snap.exists) continue;
+        const data = snap.data()!;
+        if (data.payoutId) {
+          throw new Error(`Transaction ${snap.id} already settled in payout ${data.payoutId}`);
+        }
+        grossUsd += data.priceUsd || 0;
+        const cur = data.currency || 'USD';
+        totalsByCurrency[cur] = (totalsByCurrency[cur] || 0) + (data.price || 0);
+        count++;
+      }
+
+      const commissionUsd = grossUsd * commissionRate;
+
+      trx.set(payoutRef, {
+        affiliateId: affiliateId || null,
+        promoCode: promoCode.trim().toUpperCase(),
+        transactionIds,
+        transactionCount: count,
+        grossUsd,
+        commissionRate,
+        commissionUsd,
+        totalsByCurrency,
+        status: 'pending',
+        note: note || null,
+        createdAt: now,
+        createdBy: admin.email,
+        paidAt: null,
+        paidBy: null,
+      });
+
+      for (const ref of txnRefs) {
+        trx.update(ref, {
+          payoutId: payoutRef.id,
+          settledAt: now,
+          settledBy: admin.email,
+        });
+      }
+    });
+
+    // Audit log
+    await db.collection('adminAuditLog').add({
+      action: 'payout_created',
+      adminId: admin.uid,
+      adminEmail: admin.email,
+      details: {
+        payoutId: payoutRef.id,
+        promoCode,
+        affiliateId,
+        transactionCount: transactionIds.length,
+        commissionRate,
+      },
+      timestamp: now,
+    });
+
+    return { success: true, payoutId: payoutRef.id };
+  } catch (error: unknown) {
+    console.error('Error bulk-settling affiliate transactions:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to create payout';
+    return { success: false, error: msg };
+  }
+}
+
+export interface PayoutRow {
+  id: string;
+  affiliateId: string | null;
+  promoCode: string;
+  transactionCount: number;
+  grossUsd: number;
+  commissionRate: number;
+  commissionUsd: number;
+  totalsByCurrency: Record<string, number>;
+  status: string;
+  note: string | null;
+  createdAt: string | null;
+  createdBy: string;
+  paidAt: string | null;
+  paidBy: string | null;
+}
+
+export async function listPayouts(options: {
+  promoCode?: string | null;
+  affiliateId?: string | null;
+  pageSize?: number;
+}): Promise<{ payouts: PayoutRow[]; error?: string }> {
+  const admin = await verifyAdmin();
+  if (!admin) return { payouts: [], error: 'Unauthorized' };
+
+  try {
+    const { db } = getFirebaseAdmin();
+    let query: FirebaseFirestore.Query = db.collection('payouts').orderBy('createdAt', 'desc');
+
+    if (options.promoCode) {
+      query = db
+        .collection('payouts')
+        .where('promoCode', '==', options.promoCode.trim().toUpperCase())
+        .orderBy('createdAt', 'desc');
+    } else if (options.affiliateId) {
+      query = db
+        .collection('payouts')
+        .where('affiliateId', '==', options.affiliateId)
+        .orderBy('createdAt', 'desc');
+    }
+
+    const snapshot = await query.limit(options.pageSize || 100).get();
+
+    const payouts: PayoutRow[] = snapshot.docs.map((doc) => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        affiliateId: d.affiliateId || null,
+        promoCode: d.promoCode || '',
+        transactionCount: d.transactionCount || 0,
+        grossUsd: d.grossUsd || 0,
+        commissionRate: d.commissionRate || 0,
+        commissionUsd: d.commissionUsd || 0,
+        totalsByCurrency: d.totalsByCurrency || {},
+        status: d.status || 'pending',
+        note: d.note || null,
+        createdAt: d.createdAt?.toDate?.()?.toISOString() || null,
+        createdBy: d.createdBy || '',
+        paidAt: d.paidAt?.toDate?.()?.toISOString() || null,
+        paidBy: d.paidBy || null,
+      };
+    });
+
+    return { payouts };
+  } catch (error) {
+    console.error('Error listing payouts:', error);
+    return { payouts: [], error: 'Failed to list payouts' };
+  }
+}
+
+export async function getPayoutDetails(payoutId: string): Promise<{
+  payout: PayoutRow | null;
+  transactions: AffiliateTransactionRow[];
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) return { payout: null, transactions: [], error: 'Unauthorized' };
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const doc = await db.collection('payouts').doc(payoutId).get();
+    if (!doc.exists) return { payout: null, transactions: [], error: 'Payout not found' };
+
+    const d = doc.data()!;
+    const payout: PayoutRow = {
+      id: doc.id,
+      affiliateId: d.affiliateId || null,
+      promoCode: d.promoCode || '',
+      transactionCount: d.transactionCount || 0,
+      grossUsd: d.grossUsd || 0,
+      commissionRate: d.commissionRate || 0,
+      commissionUsd: d.commissionUsd || 0,
+      totalsByCurrency: d.totalsByCurrency || {},
+      status: d.status || 'pending',
+      note: d.note || null,
+      createdAt: d.createdAt?.toDate?.()?.toISOString() || null,
+      createdBy: d.createdBy || '',
+      paidAt: d.paidAt?.toDate?.()?.toISOString() || null,
+      paidBy: d.paidBy || null,
+    };
+
+    const ids: string[] = d.transactionIds || [];
+    const transactions: AffiliateTransactionRow[] = [];
+    if (ids.length > 0) {
+      const refs = ids.map((id) => db.collection('affiliateTransactions').doc(id));
+      const docs = await db.getAll(...refs);
+      docs.forEach((docSnap) => {
+        if (docSnap.exists) {
+          transactions.push(
+            mapAffiliateTransactionDoc(docSnap as FirebaseFirestore.QueryDocumentSnapshot)
+          );
+        }
+      });
+    }
+
+    return { payout, transactions };
+  } catch (error) {
+    console.error('Error fetching payout details:', error);
+    return { payout: null, transactions: [], error: 'Failed to fetch payout details' };
+  }
+}
+
+export async function markPayoutAsPaid(options: {
+  payoutId: string;
+  note?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const admin = await verifyAdmin();
+  if (!admin) return { success: false, error: 'Unauthorized' };
+
+  try {
+    const { db } = getFirebaseAdmin();
+    const ref = db.collection('payouts').doc(options.payoutId);
+    const doc = await ref.get();
+    if (!doc.exists) return { success: false, error: 'Payout not found' };
+    if (doc.data()?.status === 'paid') {
+      return { success: false, error: 'Payout is already marked as paid' };
+    }
+
+    const now = new Date();
+    await ref.update({
+      status: 'paid',
+      paidAt: now,
+      paidBy: admin.email,
+      ...(options.note ? { note: options.note } : {}),
+    });
+
+    await db.collection('adminAuditLog').add({
+      action: 'payout_marked_paid',
+      adminId: admin.uid,
+      adminEmail: admin.email,
+      details: { payoutId: options.payoutId, note: options.note || null },
+      timestamp: now,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error marking payout as paid:', error);
+    return { success: false, error: 'Failed to mark payout as paid' };
+  }
+}
+
+// List RevenueCat subscription events where subscriber_attributes.discount_code matches the promo code
+export async function listEventsByDiscountCode(options: {
+  promoCode: string;
+  pageSize?: number;
+}): Promise<{
+  events: Array<{
+    id: string;
+    type: string;
+    appUserId: string;
+    productId: string | null;
+    store: string | null;
+    periodType: string | null;
+    presentedOfferingId: string | null;
+    price: number | null;
+    priceInPurchasedCurrency: number | null;
+    currency: string | null;
+    isTrialConversion: boolean | null;
+    eventTimestampMs: number | null;
+    expirationAtMs: number | null;
+    discountCode: string | null;
+    transactionId: string | null;
+  }>;
+  error?: string;
+}> {
+  const admin = await verifyAdmin();
+  if (!admin) {
+    return { events: [], error: 'Unauthorized' };
+  }
+
+  const { promoCode, pageSize = 100 } = options;
+  const normalizedCode = promoCode.trim().toUpperCase();
+
+  try {
+    const { db } = getFirebaseAdmin();
+
+    // Firestore supports dot notation for nested fields
+    const snapshot = await db
+      .collection('revenuecatSubscriptionEvents')
+      .where('subscriber_attributes.discount_code.value', '==', normalizedCode)
+      .orderBy('event_timestamp_ms', 'desc')
+      .limit(pageSize)
+      .get();
+
+    const events = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        type: data.type || 'unknown',
+        appUserId: data.app_user_id || '',
+        productId: data.product_id || null,
+        store: data.store || null,
+        periodType: data.period_type || null,
+        presentedOfferingId: data.presented_offering_id || null,
+        price: data.price ?? null,
+        priceInPurchasedCurrency: data.price_in_purchased_currency ?? null,
+        currency: data.currency || null,
+        isTrialConversion: data.is_trial_conversion ?? null,
+        eventTimestampMs: data.event_timestamp_ms || null,
+        expirationAtMs: data.expiration_at_ms || null,
+        discountCode: data.subscriber_attributes?.discount_code?.value || null,
+        transactionId: data.transaction_id || null,
+      };
+    });
+
+    return { events };
+  } catch (error) {
+    console.error('Error listing events by discount code:', error);
+    return { events: [], error: 'Failed to list events' };
   }
 }
 

@@ -31,5 +31,6 @@ export { sendScheduledNotification } from './notifications/sendScheduledNotifica
 export { redeemPromoCodeFunction } from './admin/redeemPromoCode';
 export { recordDiscountTransactionFunction as recordDiscountTransaction } from './admin/recordDiscountTransaction';
 export { updateDiscountTransactionStatusFunction } from './admin/updateDiscountTransactionStatus';
+export { affiliateTransactionsListener } from './admin/affiliateTransactionsListener';
 export { sendBulkNotificationFunction } from './admin/sendBulkNotification';
 export { syncRevenueCatDataFunction } from './admin/syncRevenueCatData';

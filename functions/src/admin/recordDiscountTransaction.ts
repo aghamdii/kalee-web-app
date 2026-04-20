@@ -143,35 +143,10 @@ export const recordDiscountTransactionFunction = onCall({
 
     const txnRef = await db.collection('discountTransactions').add(transactionData);
 
-    // Update promo code usage (transaction for race safety)
-    if (promoDoc.exists) {
-      await db.runTransaction(async (transaction) => {
-        const freshPromoDoc = await transaction.get(
-          db.collection('promoCodes').doc(normalizedCode)
-        );
-        const promoData = freshPromoDoc.data()!;
-
-        const newUsedCount = promoData.usedCount + 1;
-        const shouldMarkUsed =
-          promoData.maxUses !== -1 && newUsedCount >= promoData.maxUses;
-
-        const redemption = {
-          usedBy: rcAppUserId,
-          usedAt: admin.firestore.Timestamp.now(),
-          success: true,
-          type: 'discount_purchase',
-          planType,
-          price,
-          currency,
-        };
-
-        transaction.update(freshPromoDoc.ref, {
-          usedCount: newUsedCount,
-          status: shouldMarkUsed ? 'used' : promoData.status,
-          redemptions: admin.firestore.FieldValue.arrayUnion(redemption),
-        });
-      });
-    }
+    // NOTE: usedCount on promoCodes is no longer incremented here.
+    // The displayed usage count is now derived from the affiliateTransactions
+    // collection via a count() query, so we avoid double-counting (the
+    // affiliateTransactionsListener also processes the same purchase).
 
     logger.info('Discount transaction recorded successfully', {
       transactionId: txnRef.id,
